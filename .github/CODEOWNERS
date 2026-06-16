@@ -1,0 +1,16 @@
+# CODEOWNERS — GitHub auto-tags reviewer on PR per path rule
+#
+# 🚨 Fork user 第 1 件事:把 `@ajenchen` 改成你的 GitHub username(或 team handle)
+# 否則 GitHub UI 會嘗試 auto-tag template 原作者 → 你的 PR 不會自動派給正確 reviewer
+#
+# Quick fix:
+#   sed -i '' 's/@ajenchen/@<your-github-username>/g' .github/CODEOWNERS
+#
+# 或加 team handle(eg. `@your-org/frontend-team`)
+
+# Default reviewer for all changes(fork user 替換為自己)
+* @ajenchen
+
+# Future: per-app owners(team member onboard 後加)
+# /apps/order-dashboard/ @wendy @teammate2
+# /apps/analytics-portal/ @teammate3

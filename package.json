@@ -1,0 +1,47 @@
+{
+  "name": "ds-product-template",
+  "private": true,
+  "version": "0.0.0",
+  "description": "GitHub Template Repository — fork-and-go monorepo for product team apps consuming @qijenchen/design-system. Use 'Use this template' button OR clone + npm run create-app <product-name>.",
+  "type": "module",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "echo 'Pick an app: cd apps/<name> && npm run dev' && exit 1",
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "tsc -b",
+    "storybook": "storybook dev -p 6006",
+    "build-storybook": "storybook build --output-dir storybook-static",
+    "create-app": "node scripts/create-app.mjs",
+    "lint:imports": "node scripts/lint-ds-internal-imports.mjs",
+    "setup:netlify": "node scripts/setup-netlify-access.mjs",
+    "deploy-url": "node scripts/deploy-url.mjs",
+    "postinstall": "node scripts/check-plugin-installed.mjs",
+    "sync-all": "node scripts/sync-all.mjs"
+  },
+  "dependencies": {
+    "@qijenchen/design-system": "^0.1.0-beta.69",
+    "@qijenchen/storybook-config": "^0.1.0-beta.69",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@storybook/addon-docs": "^8.6.0",
+    "@storybook/react": "^8.6.0",
+    "@storybook/react-vite": "^8.6.0",
+    "@tailwindcss/vite": "^4.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "playwright": "^1.60.0",
+    "storybook": "^8.6.0",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.7.0",
+    "vite": "^7.0.0"
+  },
+  "engines": {
+    "node": ">=22.0.0",
+    "npm": ">=10.0.0"
+  }
+}

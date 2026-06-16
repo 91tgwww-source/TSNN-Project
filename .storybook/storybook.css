@@ -1,0 +1,16 @@
+/* 2026-05-26 Storybook root CSS — drives Tailwind v4 scan + imports DS tokens
+ *
+ * Per user 「為何都沒吃到正確元件和設計原則」screenshot challenge:
+ *   - Tailwind v4 需 `@import 'tailwindcss'` 觸發 utility class 生成
+ *   - DS tokens 必 import(component class 才能 resolve var(--token))
+ *   - @source 指向 DS source(讓 Tailwind scan 到 DS 元件用的 utility classes 並 generate CSS)
+ *
+ * 跟 apps/template/src/globals.css 同 pattern,但 path 從 .storybook/ 算起。
+ */
+@import 'tailwindcss';
+@import '@qijenchen/design-system/styles/tokens';
+@source '../node_modules/@qijenchen/design-system/src/**/*.{js,ts,jsx,tsx}';
+/* 2026-06-12 fork-audit:stories 的 doc placeholder(如 `{color}`)會被誤掃成 utility 生成無效 CSS
+   (lightningcss CurlyBracketBlock warning)— stories 不進 consumer bundle,排除治本 + 減 CSS 體積 */
+@source not '../node_modules/@qijenchen/design-system/src/**/*.stories.tsx';
+@source '../apps/**/*.{tsx,ts}';

@@ -1,0 +1,52 @@
+# 2026-05-26 對齊 DS repo pattern(netlify.toml + Netlify Git integration)
+# Per user 「為何要設這個 secret?」challenge — DS repo 就沒用 secret,直接 Netlify 連 repo auto-build。
+#
+# Fork-and-go 流程(painless,無需 GitHub secret):
+#   1. Netlify Dashboard → New site → 連 fork 後的 ds-product-template repo
+#   2. Netlify 自動讀本 file → build storybook-static → deploy
+#   3. 完成。每次 push main → Netlify auto rebuild。
+#
+# 註:本 repo 無獨立 deploy workflow — deploy 全經 Netlify Git integration(讀本 file build command)。
+# CI 只有 audit.yml(tsc + lint:imports + build)+ sync-design-system.yml(Dependabot/DS 版本同步)。
+
+[build]
+  command = "npm run build-storybook"
+  publish = "storybook-static"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# 免費密碼保護 — Edge Function 自己做 HTTP Basic Auth(見下方「Access control」+ netlify/edge-functions/basic-auth.ts)。
+# 設 env var STORYBOOK_BASIC_AUTH="user:password"(多組空格分隔)→ 站台跳帳密彈窗;未設 = 公開 pass-through。
+[[edge_functions]]
+  path = "/*"
+  function = "basic-auth"
+
+# Per-branch deploy previews 預設啟用(任何 branch push → 自動 preview URL)
+# Production deploy 走 main(production URL = 永遠最新 main 的 storybook)
+
+# ─── Access control(2026-05-26 per user directives)──────────────────────────
+# Netlify deploy 預設公開,Storybook 含內部產品 UI 必限團隊內部 access。**2 道防線**:
+#
+# 1️⃣ Defense-in-depth(本檔 headers):反 SEO indexing
+#    X-Robots-Tag noindex(Google/Bing 不收錄)+ Referrer / X-Frame headers
+#    只防 SEO 不防直接訪問,必須配第 2 道。
+#
+# 2️⃣ Real auth — FREE = Edge Function 自做 Basic Auth(2026-06-05 二修:Netlify 內建密碼〔Dashboard +
+#    `_headers` Basic-Auth〕都是 Pro $20/mo,官方 docs + support forum 證實;`_headers` 也不套用到 edge function)。
+#    免費要擋陌生人 → `netlify/edge-functions/basic-auth.ts` 讀 Authorization header 自己做 Basic Auth
+#    (Edge Functions 免費方案可用、`.netlify.app` 預設網址直接生效、無需自訂網域)。已 wire 上方 [[edge_functions]]。
+#      fork user 在 Netlify 設 env var `STORYBOOK_BASIC_AUTH` = "user:password"(多組空格分隔)→ deploy 後跳帳密彈窗。
+#      密碼只存 Netlify 後台 env var(不進 public repo);未設 = 公開 pass-through。
+#    進階(要更好體驗才升級,非必須):Pro Password Protection($20/mo,美化密碼頁/只擋 preview 放行 production)
+#      OR Cloudflare Access(免費 50 user 真 SSO,需自訂網域 + proxy)。
+#
+# 完整 step-by-step 詳 README「Storybook deploy」段。
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "SAMEORIGIN"
