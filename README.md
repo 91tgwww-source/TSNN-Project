@@ -167,6 +167,11 @@ Deploy URL 在 push 後 hook `inject_deploy_url_after_push.sh` 自動 inject 進
 
 > **多地點工作(公司/家裡)+ Claude Code on the web push 開通** → 詳
 > `docs/06-deploy-and-web-push.md`(一次設定、綁帳號、零 per-machine,push + deploy 任何瀏覽器通用)。
+>
+> **⚠️ 部署平台建議:Cloudflare Pages(免費首選)** → 詳 `docs/07-cloudflare-pages-deploy.md`。
+> Netlify 自 2025/9 改 **credit 制**,免費每月 300 credits 用完即鎖站(production deploy 停用);
+> Cloudflare Pages 免費非 credit 制、不會被鎖,密碼保護已內建 `functions/_middleware.ts`。
+> 下方 Netlify 流程仍可用(免費額度內或付費),擇一即可。
 
 **Step 1 — Connect Netlify**:
 1. Netlify Dashboard → **Add new project** → 連 fork 後的 `ds-product-template` repo
