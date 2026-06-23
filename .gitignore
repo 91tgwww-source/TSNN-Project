@@ -25,6 +25,9 @@ Icon?
 .idea/
 .claude/settings.local.json
 
+# Claude Code governance hook runtime logs（machine/session-local，非 SSOT）
+.claude/logs/
+
 # Temp
 tmp/
 .cache/
