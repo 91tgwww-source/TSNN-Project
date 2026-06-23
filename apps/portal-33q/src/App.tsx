@@ -14,11 +14,12 @@
 //
 // SSOT 鐵律:只 consume @qijenchen/design-system public exports,不改 DS source,不自刻 DS 元件。
 
-import { useState, type ReactNode } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import {
   Avatar,
   Button,
   Badge,
+  Input,
   Separator,
   ScrollArea,
   ScrollBar,
@@ -37,6 +38,7 @@ import {
 import {
   Bell,
   Phone,
+  Search,
   Calendar,
   Mail,
   Users,
@@ -146,6 +148,29 @@ const QUOTES = [
   '休息,是為了走更長遠的路。',
 ]
 
+// 行事曆 — event 以「距今天的天數 offset」表示(0 = 今天),保證畫面永遠顯示近兩週的當前資料。
+const EVENT_TYPES = {
+  meeting: { label: '會議', color: 'blue' },
+  oneonone: { label: '1:1', color: 'purple' },
+  training: { label: '教育訓練', color: 'green' },
+  leave: { label: '假勤', color: 'orange' },
+  review: { label: '評審', color: 'red' },
+} as const
+type EventType = keyof typeof EVENT_TYPES
+const EVENTS: { offset: number; time: string; title: string; type: EventType }[] = [
+  { offset: 0, time: '09:30', title: '部門晨會', type: 'meeting' },
+  { offset: 0, time: '14:00', title: '33q 改版設計評審', type: 'review' },
+  { offset: 0, time: '17:00', title: '與 PM 進度同步', type: 'oneonone' },
+  { offset: 1, time: '11:00', title: '與主管 1:1', type: 'oneonone' },
+  { offset: 2, time: '10:00', title: 'Sprint 規劃會議', type: 'meeting' },
+  { offset: 3, time: '15:30', title: '使用者訪談', type: 'meeting' },
+  { offset: 5, time: '13:30', title: '無障礙設計工作坊', type: 'training' },
+  { offset: 7, time: '全天', title: '特別休假', type: 'leave' },
+  { offset: 9, time: '16:00', title: '跨部門協作會議', type: 'meeting' },
+  { offset: 12, time: '10:30', title: '季度成果檢討', type: 'review' },
+]
+const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
+
 /* ──────────────────────────── Building blocks ──────────────────────────── */
 
 function Module({
@@ -182,6 +207,108 @@ function AppTile({ app }: { app: AppEntry }) {
 }
 
 /* ──────────────────────────── Left column ──────────────────────────── */
+
+function CalendarModule() {
+  const [sel, setSel] = useState<number | null>(null) // null = 預設「近期 3 筆」視圖;number = 該 offset 當日
+  const today = useMemo(() => {
+    const d = new Date()
+    d.setHours(0, 0, 0, 0)
+    return d
+  }, [])
+  const days = useMemo(
+    () =>
+      Array.from({ length: 14 }, (_, i) => {
+        const d = new Date(today)
+        d.setDate(d.getDate() + i)
+        return d
+      }),
+    [today],
+  )
+  const hasEvents = (offset: number) => EVENTS.some((e) => e.offset === offset)
+  const shown =
+    sel === null
+      ? [...EVENTS]
+          .filter((e) => e.offset >= 0)
+          .sort((a, b) => a.offset - b.offset || a.time.localeCompare(b.time))
+          .slice(0, 3)
+      : EVENTS.filter((e) => e.offset === sel).sort((a, b) => a.time.localeCompare(b.time))
+  const selDate = sel === null ? null : days[sel]
+  const dayLabel = (offset: number) =>
+    offset === 0 ? '今天' : offset === 1 ? '明天' : `${days[offset].getMonth() + 1}/${days[offset].getDate()}`
+
+  return (
+    <Module title="我的行事曆" action={<Button variant="text" size="sm" endIcon={ChevronRight}>完整</Button>}>
+      {/* 近兩週日期選擇條(7 欄 × 2 列)*/}
+      <div className="grid grid-cols-7 gap-[4px]">
+        {days.map((d, i) => {
+          const isToday = i === 0
+          const isSel = sel === i
+          const state = isSel
+            ? 'bg-primary text-on-emphasis'
+            : isToday
+              ? 'bg-primary-subtle text-primary font-semibold'
+              : 'text-foreground hover:bg-neutral-hover'
+          return (
+            <button
+              key={i}
+              onClick={() => setSel(isSel ? null : i)}
+              aria-pressed={isSel}
+              aria-label={`${d.getMonth() + 1}月${d.getDate()}日 週${WEEKDAYS[d.getDay()]}${hasEvents(i) ? ' · 有行程' : ''}`}
+              className={`flex flex-col items-center gap-[2px] rounded-md py-[6px] transition-colors ${state}`}
+            >
+              <span className="text-caption opacity-70">{WEEKDAYS[d.getDay()]}</span>
+              <span className="text-body tabular-nums leading-none">{d.getDate()}</span>
+              <span className={`size-[5px] rounded-full ${hasEvents(i) ? 'bg-current' : 'bg-transparent'}`} />
+            </button>
+          )
+        })}
+      </div>
+
+      <Separator className="my-[var(--layout-space-tight)]" />
+
+      {/* event 區:預設近 3 筆;選日期則過濾當日 */}
+      <div className="flex items-center justify-between">
+        <span className="text-body font-medium text-foreground">
+          {sel === null ? '近期行程' : `${selDate!.getMonth() + 1}月${selDate!.getDate()}日 · 週${WEEKDAYS[selDate!.getDay()]}`}
+        </span>
+        {sel === null ? (
+          <span className="text-caption text-fg-muted">點日期看當日</span>
+        ) : (
+          <Button variant="text" size="sm" onClick={() => setSel(null)}>
+            返回近期
+          </Button>
+        )}
+      </div>
+
+      {shown.length > 0 ? (
+        <ul className="mt-[var(--layout-space-tight)] flex flex-col">
+          {shown.map((e, idx) => (
+            <li key={`${e.offset}-${e.time}-${e.title}`}>
+              {idx > 0 && <Separator className="my-[8px]" />}
+              <div className="flex items-start gap-[var(--layout-space-tight)]">
+                <span
+                  className="mt-[6px] size-2 shrink-0 rounded-full"
+                  style={{ backgroundColor: `var(--color-${EVENT_TYPES[e.type].color}-6)` }}
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="text-body font-medium text-foreground truncate">{e.title}</div>
+                  <div className="text-caption text-fg-muted">
+                    {sel === null && <span className="tabular-nums">{dayLabel(e.offset)} · </span>}
+                    <span className="tabular-nums">{e.time}</span> · {EVENT_TYPES[e.type].label}
+                  </div>
+                </div>
+              </div>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <div className="mt-[var(--layout-space-tight)] py-[var(--layout-space-loose)] text-center text-caption text-fg-muted">
+          這天沒有安排行程
+        </div>
+      )}
+    </Module>
+  )
+}
 
 function MeModule() {
   return (
@@ -406,6 +533,13 @@ function PortalHeader() {
           ))}
         </nav>
         <div className="ml-auto flex items-center gap-[8px]">
+          <Input
+            startIcon={Search}
+            size="sm"
+            placeholder="搜尋應用、同事、公告…"
+            aria-label="全站搜尋"
+            className="w-[260px] rounded-full"
+          />
           <Button variant="text" size="md" iconOnly startIcon={Mail} aria-label="信件" />
           <div className="relative">
             <Button variant="text" size="md" iconOnly startIcon={Bell} aria-label="通知" />
@@ -467,6 +601,7 @@ export default function App() {
             {/* 左欄 */}
             <div className="flex flex-col gap-[20px]">
               <MeModule />
+              <CalendarModule />
               <TeamModule />
             </div>
 
