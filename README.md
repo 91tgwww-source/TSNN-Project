@@ -165,6 +165,9 @@ Deploy URL 在 push 後 hook `inject_deploy_url_after_push.sh` 自動 inject 進
 
 ## Storybook deploy(無需 GitHub secret)
 
+> **多地點工作(公司/家裡)+ Claude Code on the web push 開通** → 詳
+> `docs/06-deploy-and-web-push.md`(一次設定、綁帳號、零 per-machine,push + deploy 任何瀏覽器通用)。
+
 **Step 1 — Connect Netlify**:
 1. Netlify Dashboard → **Add new project** → 連 fork 後的 `ds-product-template` repo
 2. Netlify 自動讀根目錄 `netlify.toml` → build `storybook-static` → deploy
