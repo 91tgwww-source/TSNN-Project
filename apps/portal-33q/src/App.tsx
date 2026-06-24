@@ -263,9 +263,10 @@ function CalendarModule() {
               <span className="text-caption opacity-70">{WEEKDAYS[d.getDay()]}</span>
               <span className="text-body tabular-nums leading-none">{d.getDate()}</span>
               <span className="flex h-[5px] items-center gap-[2px]">
-                {cals.slice(0, 3).map((c) => (
-                  <span key={c} className="size-[5px] rounded-full" style={{ backgroundColor: CAL_COLOR(c) }} />
-                ))}
+                {!isSel &&
+                  cals.slice(0, 3).map((c) => (
+                    <span key={c} className="size-[5px] rounded-full" style={{ backgroundColor: CAL_COLOR(c) }} />
+                  ))}
               </span>
             </button>
           )
@@ -496,7 +497,7 @@ function ArticlesModule() {
                 {page.map((article, ai) => (
                   <li key={article.title}>
                     {ai > 0 && <Separator className="my-[8px]" />}
-                    <a className="group flex items-start gap-[var(--layout-space-tight)] rounded-md p-[4px] transition-colors hover:bg-neutral-hover">
+                    <a href="#" className="group flex items-start gap-[var(--layout-space-tight)] rounded-md p-[4px] transition-colors hover:bg-neutral-hover">
                       <div className="mt-[2px] size-10 shrink-0 rounded-md bg-surface flex items-center justify-center">
                         <FileText className="size-5 text-fg-muted" />
                       </div>
@@ -555,6 +556,7 @@ function PortalHeader() {
           {['首頁', '應用', '公告', '知識庫'].map((n, i) => (
             <a
               key={n}
+              href="#"
               className={`rounded-md px-[var(--layout-space-tight)] py-[6px] transition-colors hover:bg-neutral-hover ${i === 0 ? 'text-foreground font-medium' : ''}`}
             >
               {n}
@@ -594,7 +596,7 @@ function PortalFooter() {
         </div>
         <nav className="flex items-center gap-[var(--layout-space-loose)] text-caption text-fg-secondary">
           {['使用說明', '意見回饋', 'IT 服務台', '隱私政策'].map((n) => (
-            <a key={n} className="transition-colors hover:text-foreground">
+            <a key={n} href="#" className="transition-colors hover:text-foreground">
               {n}
             </a>
           ))}
