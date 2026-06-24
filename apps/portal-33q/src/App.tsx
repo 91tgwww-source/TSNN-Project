@@ -40,6 +40,8 @@ import {
   Phone,
   Search,
   Calendar,
+  CalendarDays,
+  Check,
   Mail,
   Users,
   BarChart3,
@@ -148,13 +150,18 @@ const QUOTES = [
   '休息,是為了走更長遠的路。',
 ]
 
-// 行事曆 — 多「行事曆來源」(對應既有系統的多個行事曆,各有顏色);event 以距今天的 offset 表示(0=今天)。
+// 行事曆 — 多「行事曆來源」(對應既有系統:user 可訂閱數十個行事曆,各有顏色 + 長名稱);
+// event 以距今天的 offset 表示(0=今天)。
 const CALENDARS = {
-  company: { label: '公司', color: 'blue' },
-  team: { label: '部門', color: 'purple' },
-  personal: { label: '個人', color: 'green' },
-  training: { label: '教育訓練', color: 'orange' },
-  leave: { label: '請假', color: 'red' },
+  company: { label: '公司公告行事曆', color: 'blue' },
+  dept: { label: '產品設計部', color: 'purple' },
+  personal: { label: '個人行程', color: 'green' },
+  training: { label: '教育訓練與工作坊', color: 'orange' },
+  leave: { label: '請假與出勤', color: 'red' },
+  meeting: { label: '跨部門會議', color: 'indigo' },
+  project: { label: '33q 改版專案', color: 'magenta' },
+  hr: { label: '人資活動與員工福利', color: 'turquoise' },
+  holiday: { label: '國定假日', color: 'amber' },
 } as const
 type CalendarKey = keyof typeof CALENDARS
 type CalEvent = { offset: number; time?: string; allDay?: boolean; title: string; calendar: CalendarKey }
@@ -162,12 +169,15 @@ const EVENTS: CalEvent[] = [
   // 今天(offset 0)刻意留空 — 示範「今天無行程 → 顯示近期最近三筆」
   { offset: 1, allDay: true, title: '全員教育訓練日', calendar: 'training' },
   { offset: 1, time: '11:00', title: '與主管 1:1', calendar: 'personal' },
-  { offset: 2, time: '10:00', title: 'Sprint 規劃會議', calendar: 'company' },
-  { offset: 3, time: '15:30', title: '使用者訪談', calendar: 'team' },
-  { offset: 5, time: '14:00', title: '33q 改版設計評審', calendar: 'team' },
+  { offset: 2, time: '10:00', title: 'Sprint 規劃會議', calendar: 'project' },
+  { offset: 2, time: '15:00', title: '設計部週會', calendar: 'dept' },
+  { offset: 3, time: '15:30', title: '使用者訪談', calendar: 'project' },
+  { offset: 4, allDay: true, title: '國慶日', calendar: 'holiday' },
+  { offset: 5, time: '14:00', title: '33q 改版設計評審', calendar: 'project' },
+  { offset: 6, time: '09:30', title: '跨部門協作會議', calendar: 'meeting' },
   { offset: 7, allDay: true, title: '特別休假', calendar: 'leave' },
-  { offset: 9, time: '16:00', title: '跨部門協作會議', calendar: 'company' },
-  { offset: 12, time: '10:30', title: '季度成果檢討', calendar: 'company' },
+  { offset: 9, time: '16:00', title: '季度成果檢討', calendar: 'company' },
+  { offset: 11, time: '13:00', title: '年度員工健檢', calendar: 'hr' },
 ]
 const CAL_COLOR = (k: CalendarKey) => `var(--color-${CALENDARS[k].color}-6)`
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
@@ -210,77 +220,140 @@ function AppTile({ app }: { app: AppEntry }) {
 /* ──────────────────────────── Left column ──────────────────────────── */
 
 function CalendarModule() {
-  const [sel, setSel] = useState<number | null>(null) // null = 預設「近期 3 筆」視圖;number = 該 offset 當日
+  const [sel, setSel] = useState<number | null>(null) // null = 預設「近期 3 筆」視圖;number = 距今天 offset(>=0)
+  const [hidden, setHidden] = useState<Set<CalendarKey>>(() => new Set()) // 被隱藏的行事曆
+  const toggleCal = (k: CalendarKey) =>
+    setHidden((prev) => {
+      const next = new Set(prev)
+      if (next.has(k)) next.delete(k)
+      else next.add(k)
+      return next
+    })
   const today = useMemo(() => {
     const d = new Date()
     d.setHours(0, 0, 0, 0)
     return d
   }, [])
-  const days = useMemo(
-    () =>
-      Array.from({ length: 14 }, (_, i) => {
-        const d = new Date(today)
-        d.setDate(d.getDate() + i)
-        return d
-      }),
-    [today],
-  )
+  // 兩週對齊真實日曆週:從「本週日」起算 14 格(日~六 × 2),星期共用最上方一排
+  const cells = useMemo(() => {
+    const start = new Date(today)
+    start.setDate(start.getDate() - start.getDay()) // 回到本週日
+    return Array.from({ length: 14 }, (_, i) => {
+      const d = new Date(start)
+      d.setDate(d.getDate() + i)
+      return { date: d, offset: Math.round((d.getTime() - today.getTime()) / 86400000) }
+    })
+  }, [today])
+  const visibleEvents = EVENTS.filter((e) => !hidden.has(e.calendar))
   // 排序:全天事件置頂,再依時間
   const byTime = (a: CalEvent, b: CalEvent) =>
     Number(b.allDay ?? false) - Number(a.allDay ?? false) || (a.time ?? '').localeCompare(b.time ?? '')
-  // 某天有哪些「不同行事曆來源」(供日期格小色點)
-  const calsOn = (offset: number) => [...new Set(EVENTS.filter((e) => e.offset === offset).map((e) => e.calendar))]
-  const todayEmpty = !EVENTS.some((e) => e.offset === 0)
+  const dayHasEvents = (offset: number) => offset >= 0 && visibleEvents.some((e) => e.offset === offset)
+  const todayEmpty = !visibleEvents.some((e) => e.offset === 0)
   const shown =
     sel === null
-      ? [...EVENTS].filter((e) => e.offset >= 0).sort((a, b) => a.offset - b.offset || byTime(a, b)).slice(0, 3)
-      : EVENTS.filter((e) => e.offset === sel).sort(byTime)
-  const selDate = sel === null ? null : days[sel]
-  const dayLabel = (offset: number) =>
-    offset === 0 ? '今天' : offset === 1 ? '明天' : `${days[offset].getMonth() + 1}/${days[offset].getDate()}`
+      ? [...visibleEvents].filter((e) => e.offset >= 0).sort((a, b) => a.offset - b.offset || byTime(a, b)).slice(0, 3)
+      : visibleEvents.filter((e) => e.offset === sel).sort(byTime)
+  const offsetDate = (offset: number) => {
+    const d = new Date(today)
+    d.setDate(d.getDate() + offset)
+    return d
+  }
+  const selDate = sel === null ? null : offsetDate(sel)
+  const dayLabel = (offset: number) => {
+    if (offset === 0) return '今天'
+    if (offset === 1) return '明天'
+    const d = offsetDate(offset)
+    return `${d.getMonth() + 1}/${d.getDate()}`
+  }
 
   return (
-    <Module title="我的行事曆" action={<Button variant="text" size="sm" endIcon={ChevronRight}>完整</Button>}>
-      {/* 近兩週日期選擇條(7 欄 × 2 列);格內小色點 = 當天各行事曆來源 */}
+    <Module
+      title="我的行事曆"
+      action={
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="text" size="sm" startIcon={CalendarDays}>
+              行事曆 ({Object.keys(CALENDARS).length})
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-[260px]">
+            <PopoverHeader>
+              <PopoverTitle>行事曆</PopoverTitle>
+            </PopoverHeader>
+            <PopoverBody>
+              <ScrollArea className="max-h-[280px]">
+                <ul className="flex flex-col">
+                  {Object.entries(CALENDARS).map(([key, c]) => {
+                    const k = key as CalendarKey
+                    const on = !hidden.has(k)
+                    return (
+                      <li key={key}>
+                        <button
+                          onClick={() => toggleCal(k)}
+                          aria-pressed={on}
+                          className="flex w-full items-center gap-[var(--layout-space-tight)] rounded-md p-[var(--layout-space-tight)] text-left transition-colors hover:bg-neutral-hover"
+                        >
+                          <span
+                            className={`size-[12px] shrink-0 rounded-full ${on ? '' : 'border border-divider'}`}
+                            style={on ? { backgroundColor: CAL_COLOR(k) } : undefined}
+                          />
+                          <span
+                            className={`min-w-0 flex-1 truncate text-body ${on ? 'text-foreground' : 'text-fg-muted'}`}
+                            title={c.label}
+                          >
+                            {c.label}
+                          </span>
+                          {on && <Check className="size-4 shrink-0 text-primary" />}
+                        </button>
+                      </li>
+                    )
+                  })}
+                </ul>
+              </ScrollArea>
+            </PopoverBody>
+          </PopoverContent>
+        </Popover>
+      }
+    >
+      {/* 星期共用最上方一排(日~六)*/}
       <div className="grid grid-cols-7 gap-[4px]">
-        {days.map((d, i) => {
-          const isToday = i === 0
-          const isSel = sel === i
-          const cals = calsOn(i)
+        {WEEKDAYS.map((w) => (
+          <span key={w} className="text-center text-caption text-fg-muted">
+            {w}
+          </span>
+        ))}
+      </div>
+      {/* 兩週日期(本週日→下週六)對齊星期排;今天之前淡化不可選;灰點 = 當天有行程 */}
+      <div className="mt-[4px] grid grid-cols-7 gap-[4px]">
+        {cells.map(({ date: d, offset }) => {
+          const isToday = offset === 0
+          const isPast = offset < 0
+          const isSel = sel === offset
+          const has = dayHasEvents(offset)
           const state = isSel
             ? 'bg-primary text-on-emphasis'
-            : isToday
-              ? 'bg-primary-subtle text-primary font-semibold'
-              : 'text-foreground hover:bg-neutral-hover'
+            : isPast
+              ? 'text-fg-disabled cursor-default'
+              : isToday
+                ? 'bg-primary-subtle text-primary font-semibold'
+                : 'text-foreground hover:bg-neutral-hover'
           return (
             <button
-              key={i}
-              onClick={() => setSel(isSel ? null : i)}
+              key={offset}
+              disabled={isPast}
+              onClick={() => !isPast && setSel(isSel ? null : offset)}
               aria-pressed={isSel}
-              aria-label={`${d.getMonth() + 1}月${d.getDate()}日 週${WEEKDAYS[d.getDay()]}${cals.length ? ' · 有行程' : ''}`}
+              aria-label={`${d.getMonth() + 1}月${d.getDate()}日 週${WEEKDAYS[d.getDay()]}${has ? ' · 有行程' : ''}`}
               className={`flex flex-col items-center gap-[2px] rounded-md py-[6px] transition-colors ${state}`}
             >
-              <span className="text-caption opacity-70">{WEEKDAYS[d.getDay()]}</span>
               <span className="text-body tabular-nums leading-none">{d.getDate()}</span>
-              <span className="flex h-[5px] items-center gap-[2px]">
-                {!isSel &&
-                  cals.slice(0, 3).map((c) => (
-                    <span key={c} className="size-[5px] rounded-full" style={{ backgroundColor: CAL_COLOR(c) }} />
-                  ))}
+              <span className="flex h-[5px] items-center">
+                {has && !isSel && <span className="size-[5px] rounded-full bg-current opacity-40" />}
               </span>
             </button>
           )
         })}
-      </div>
-
-      {/* 行事曆色票圖例 — 色點 → 來源名稱(一眼對應哪個顏色屬哪個行事曆)*/}
-      <div className="mt-[var(--layout-space-tight)] flex flex-wrap gap-[var(--layout-space-tight)]">
-        {Object.entries(CALENDARS).map(([key, c]) => (
-          <span key={key} className="inline-flex items-center gap-[4px] text-caption text-fg-muted">
-            <span className="size-2 rounded-full" style={{ backgroundColor: CAL_COLOR(key as CalendarKey) }} />
-            {c.label}
-          </span>
-        ))}
       </div>
 
       <Separator className="my-[var(--layout-space-tight)]" />
@@ -324,7 +397,9 @@ function CalendarModule() {
                       <span className="tabular-nums">{e.time}</span>
                     )}
                     <span className="opacity-50">·</span>
-                    <span>{CALENDARS[e.calendar].label}</span>
+                    <span className="max-w-[120px] truncate" title={CALENDARS[e.calendar].label}>
+                      {CALENDARS[e.calendar].label}
+                    </span>
                   </div>
                 </div>
               </div>
