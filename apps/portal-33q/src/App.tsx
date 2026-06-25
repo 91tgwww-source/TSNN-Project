@@ -14,7 +14,7 @@
 //
 // SSOT 鐵律:只 consume @qijenchen/design-system public exports,不改 DS source,不自刻 DS 元件。
 
-import { useMemo, useState, type ReactNode } from 'react'
+import { Fragment, useMemo, useState, type ReactNode } from 'react'
 import {
   Avatar,
   Button,
@@ -35,6 +35,8 @@ import {
   DialogHeader,
   DialogTitle,
   DialogBody,
+  SegmentedControl,
+  SegmentedControlItem,
   Carousel,
   CarouselContent,
   CarouselItem,
@@ -46,7 +48,6 @@ import {
   Phone,
   Search,
   Calendar,
-  CalendarDays,
   Check,
   Mail,
   Users,
@@ -188,6 +189,17 @@ const EVENTS: CalEvent[] = [
 ]
 const CAL_COLOR = (k: CalendarKey) => `var(--color-${CALENDARS[k].color}-6)`
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
+// 當年第幾週(ISO-style:以該週週四歸屬年份)
+function weekOfYear(d: Date) {
+  const x = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()))
+  x.setUTCDate(x.getUTCDate() - ((x.getUTCDay() + 6) % 7) + 3) // 移到該週週四
+  const firstThu = new Date(Date.UTC(x.getUTCFullYear(), 0, 4))
+  return 1 + Math.round((x.getTime() - firstThu.getTime()) / (7 * 86400000))
+}
+// 週數標記:年尾數 + 第幾週(例 2026 第 26 週 → "626")
+const weekTag = (d: Date) => `${d.getFullYear() % 10}${weekOfYear(d)}`
+const sameDay = (a: Date, b: Date) =>
+  a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
 
 /* ──────────────────────────── Building blocks ──────────────────────────── */
 
@@ -229,6 +241,7 @@ function AppTile({ app }: { app: AppEntry }) {
 function CalendarModule() {
   const [sel, setSel] = useState<number | null>(null) // null = 預設「近期 3 筆」視圖;number = 距今天 offset(>=0)
   const [hidden, setHidden] = useState<Set<CalendarKey>>(() => new Set()) // 被隱藏的行事曆
+  const [view, setView] = useState<'list' | 'week' | 'month'>('list') // 完整 modal 檢視模式
   const toggleCal = (k: CalendarKey) =>
     setHidden((prev) => {
       const next = new Set(prev)
@@ -343,51 +356,73 @@ function CalendarModule() {
 
   // 完整行事曆 modal 的 agenda(近兩週,只列有行程的日子)
   const agendaDays = cells.filter((c) => c.offset >= 0 && visibleEvents.some((e) => e.offset === c.offset))
+  const eventsOnDate = (d: Date) => visibleEvents.filter((e) => sameDay(offsetDate(e.offset), d))
+  // 月檢視:當月所在的 6 週 grid(從該月首日所在週的週日起算 42 格)
+  const monthCells = useMemo(() => {
+    const first = new Date(today.getFullYear(), today.getMonth(), 1)
+    const start = new Date(first)
+    start.setDate(1 - first.getDay())
+    return Array.from({ length: 42 }, (_, i) => {
+      const d = new Date(start)
+      d.setDate(d.getDate() + i)
+      return d
+    })
+  }, [today])
 
-  return (
-    <Module
-      title="我的行事曆"
-      action={
-        <Dialog>
-          <DialogTrigger asChild>
-            <Button variant="text" size="sm" startIcon={CalendarDays}>
-              完整
-            </Button>
-          </DialogTrigger>
-          <DialogContent autoHeight maxWidth={520}>
-            <DialogHeader>
-              <DialogTitle>我的行事曆 · 近兩週</DialogTitle>
-            </DialogHeader>
-            <DialogBody>
-              {agendaDays.length > 0 ? (
-                <div className="flex flex-col gap-[var(--layout-space-loose)]">
-                  {agendaDays.map(({ offset }) => (
-                    <div key={offset}>
-                      <div className="mb-[var(--layout-space-tight)] text-body font-semibold text-foreground">
-                        {dayLabel(offset)} · 週{WEEKDAYS[offsetDate(offset).getDay()]}
-                      </div>
-                      <ul className="flex flex-col gap-[var(--layout-space-tight)]">
-                        {visibleEvents
-                          .filter((e) => e.offset === offset)
-                          .sort(byTime)
-                          .map((e) => (
-                            <li key={`${e.offset}-${e.time ?? 'allday'}-${e.title}`}>{renderEvent(e, false)}</li>
-                          ))}
-                      </ul>
-                    </div>
-                  ))}
+  // ── modal 三種檢視(既有功能,示意)──
+  const listView =
+    agendaDays.length > 0 ? (
+      <div className="flex flex-col gap-[var(--layout-space-loose)]">
+        {agendaDays.map(({ offset }) => (
+          <div key={offset}>
+            <div className="mb-[var(--layout-space-tight)] text-body font-semibold text-foreground">
+              {dayLabel(offset)} · 週{WEEKDAYS[offsetDate(offset).getDay()]}
+            </div>
+            <ul className="flex flex-col gap-[var(--layout-space-tight)]">
+              {visibleEvents
+                .filter((e) => e.offset === offset)
+                .sort(byTime)
+                .map((e) => (
+                  <li key={`${e.offset}-${e.time ?? 'allday'}-${e.title}`}>{renderEvent(e, false)}</li>
+                ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    ) : (
+      <div className="py-[var(--layout-space-loose)] text-center text-caption text-fg-muted">近兩週沒有行程</div>
+    )
+
+  const weekView = (
+    <div className="grid grid-cols-7 gap-[8px]">
+      {cells.slice(0, 7).map(({ date: d, offset }) => (
+        <div key={offset} className="min-w-0">
+          <div className={`mb-[8px] text-center text-caption ${offset === 0 ? 'font-semibold text-primary' : 'text-fg-muted'}`}>
+            週{WEEKDAYS[d.getDay()]}
+            <span className="block tabular-nums">{d.getDate()}</span>
+          </div>
+          <div className="flex flex-col gap-[4px]">
+            {visibleEvents
+              .filter((e) => e.offset === offset)
+              .sort(byTime)
+              .map((e) => (
+                <div
+                  key={`${e.time ?? 'allday'}-${e.title}`}
+                  className="flex items-center gap-[4px] rounded-sm bg-surface px-[6px] py-[4px]"
+                  title={`${e.allDay ? '全天' : e.time} · ${e.title}`}
+                >
+                  <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: CAL_COLOR(e.calendar) }} />
+                  <span className="truncate text-caption text-foreground">{e.title}</span>
                 </div>
-              ) : (
-                <div className="py-[var(--layout-space-loose)] text-center text-caption text-fg-muted">
-                  近兩週沒有行程
-                </div>
-              )}
-            </DialogBody>
-          </DialogContent>
-        </Dialog>
-      }
-    >
-      {/* 星期共用最上方一排(日~六)*/}
+              ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+
+  const monthView = (
+    <div>
       <div className="grid grid-cols-7 gap-[4px]">
         {WEEKDAYS.map((w) => (
           <span key={w} className="text-center text-caption text-fg-muted">
@@ -395,36 +430,107 @@ function CalendarModule() {
           </span>
         ))}
       </div>
-      {/* 兩週日期(本週日→下週六)對齊星期排;今天之前淡化不可選;灰點 = 當天有行程 */}
       <div className="mt-[4px] grid grid-cols-7 gap-[4px]">
-        {cells.map(({ date: d, offset }) => {
-          const isToday = offset === 0
-          const isPast = offset < 0
-          const isSel = sel === offset
-          const has = dayHasEvents(offset)
-          const state = isSel
-            ? 'bg-primary text-on-emphasis'
-            : isPast
-              ? 'text-fg-disabled cursor-default'
-              : isToday
-                ? 'bg-primary-subtle text-primary font-semibold'
-                : 'text-foreground hover:bg-neutral-hover'
+        {monthCells.map((d, i) => {
+          const inMonth = d.getMonth() === today.getMonth()
+          const isToday = sameDay(d, today)
+          const evs = eventsOnDate(d)
           return (
-            <button
-              key={offset}
-              disabled={isPast}
-              onClick={() => !isPast && setSel(isSel ? null : offset)}
-              aria-pressed={isSel}
-              aria-label={`${d.getMonth() + 1}月${d.getDate()}日 週${WEEKDAYS[d.getDay()]}${has ? ' · 有行程' : ''}`}
-              className={`flex flex-col items-center gap-[2px] rounded-md py-[6px] transition-colors ${state}`}
+            <div
+              key={i}
+              className={`flex min-h-[48px] flex-col items-center gap-[2px] rounded-md py-[4px] ${isToday ? 'bg-primary-subtle' : ''}`}
             >
-              <span className="text-body tabular-nums leading-none">{d.getDate()}</span>
-              <span className="flex h-[5px] items-center">
-                {has && !isSel && <span className="size-[5px] rounded-full bg-current opacity-40" />}
+              <span
+                className={`text-caption tabular-nums ${isToday ? 'font-semibold text-primary' : inMonth ? 'text-foreground' : 'text-fg-disabled'}`}
+              >
+                {d.getDate()}
               </span>
-            </button>
+              <span className="flex flex-wrap justify-center gap-[2px]">
+                {evs.slice(0, 3).map((e, j) => (
+                  <span key={j} className="size-[5px] rounded-full" style={{ backgroundColor: CAL_COLOR(e.calendar) }} />
+                ))}
+              </span>
+            </div>
           )
         })}
+      </div>
+    </div>
+  )
+
+  return (
+    <Module
+      title="我的行事曆"
+      action={
+        <Dialog>
+          <DialogTrigger asChild>
+            <Button variant="link" size="sm">
+              更多
+            </Button>
+          </DialogTrigger>
+          <DialogContent autoHeight maxWidth={640}>
+            <DialogHeader>
+              <DialogTitle>我的行事曆</DialogTitle>
+            </DialogHeader>
+            <DialogBody>
+              <div className="mb-[var(--layout-space-loose)]">
+                <SegmentedControl value={view} onValueChange={(v) => setView(v as 'list' | 'week' | 'month')}>
+                  <SegmentedControlItem value="list">清單</SegmentedControlItem>
+                  <SegmentedControlItem value="week">週</SegmentedControlItem>
+                  <SegmentedControlItem value="month">月</SegmentedControlItem>
+                </SegmentedControl>
+              </div>
+              {view === 'list' ? listView : view === 'week' ? weekView : monthView}
+            </DialogBody>
+          </DialogContent>
+        </Dialog>
+      }
+    >
+      {/* 星期共用最上方一排;每週左側顯示週數(年尾數+第幾週,例 626);今天前淡化不可選;灰點 = 有行程 */}
+      <div className="grid items-center gap-[4px]" style={{ gridTemplateColumns: 'auto repeat(7, minmax(0,1fr))' }}>
+        <span aria-hidden />
+        {WEEKDAYS.map((w) => (
+          <span key={w} className="text-center text-caption text-fg-muted">
+            {w}
+          </span>
+        ))}
+        {[0, 7].map((wkStart) => (
+          <Fragment key={wkStart}>
+            <span
+              className="pr-[6px] text-right text-caption tabular-nums text-fg-muted"
+              title={`第 ${weekOfYear(cells[wkStart].date)} 週`}
+            >
+              {weekTag(cells[wkStart].date)}
+            </span>
+            {cells.slice(wkStart, wkStart + 7).map(({ date: d, offset }) => {
+              const isToday = offset === 0
+              const isPast = offset < 0
+              const isSel = sel === offset
+              const has = dayHasEvents(offset)
+              const state = isSel
+                ? 'bg-primary text-on-emphasis'
+                : isPast
+                  ? 'text-fg-disabled cursor-default'
+                  : isToday
+                    ? 'bg-primary-subtle text-primary font-semibold'
+                    : 'text-foreground hover:bg-neutral-hover'
+              return (
+                <button
+                  key={offset}
+                  disabled={isPast}
+                  onClick={() => !isPast && setSel(isSel ? null : offset)}
+                  aria-pressed={isSel}
+                  aria-label={`${d.getMonth() + 1}月${d.getDate()}日 週${WEEKDAYS[d.getDay()]}${has ? ' · 有行程' : ''}`}
+                  className={`flex flex-col items-center gap-[2px] rounded-md py-[6px] transition-colors ${state}`}
+                >
+                  <span className="text-body tabular-nums leading-none">{d.getDate()}</span>
+                  <span className="flex h-[5px] items-center">
+                    {has && !isSel && <span className="size-[5px] rounded-full bg-current opacity-40" />}
+                  </span>
+                </button>
+              )
+            })}
+          </Fragment>
+        ))}
       </div>
 
       <Separator className="my-[var(--layout-space-tight)]" />
