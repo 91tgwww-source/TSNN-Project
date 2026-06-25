@@ -29,6 +29,12 @@ import {
   PopoverHeader,
   PopoverTitle,
   PopoverBody,
+  Dialog,
+  DialogTrigger,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogBody,
   Carousel,
   CarouselContent,
   CarouselItem,
@@ -58,6 +64,7 @@ import {
   ShieldCheck,
   RefreshCw,
   FileText,
+  SlidersHorizontal,
   ChevronRight,
   type LucideIcon,
 } from 'lucide-react'
@@ -267,53 +274,117 @@ function CalendarModule() {
     return `${d.getMonth() + 1}/${d.getDate()}`
   }
 
+  // 單筆事件列(widget 清單 + modal agenda 共用)
+  const renderEvent = (e: CalEvent, showDay: boolean) => (
+    <div className="flex items-start gap-[var(--layout-space-tight)]">
+      <span className="mt-[6px] size-2 shrink-0 rounded-full" style={{ backgroundColor: CAL_COLOR(e.calendar) }} />
+      <div className="min-w-0 flex-1">
+        <div className="text-body font-medium text-foreground truncate">{e.title}</div>
+        <div className="flex flex-wrap items-center gap-[6px] text-caption text-fg-muted">
+          {showDay && <span className="tabular-nums">{dayLabel(e.offset)}</span>}
+          {e.allDay ? (
+            <span className="rounded-full border border-divider px-[6px] text-fg-secondary">全天</span>
+          ) : (
+            <span className="tabular-nums">{e.time}</span>
+          )}
+          <span className="opacity-50">·</span>
+          <span className="max-w-[120px] truncate" title={CALENDARS[e.calendar].label}>
+            {CALENDARS[e.calendar].label}
+          </span>
+        </div>
+      </div>
+    </div>
+  )
+
+  // 行事曆來源篩選(icon 鈕 → Popover;移出右上角「完整」固定鈕區)
+  const calendarFilter = (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button variant="text" size="sm" iconOnly startIcon={SlidersHorizontal} aria-label="篩選行事曆來源" />
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-[260px]">
+        <PopoverHeader>
+          <PopoverTitle>行事曆 ({Object.keys(CALENDARS).length})</PopoverTitle>
+        </PopoverHeader>
+        <PopoverBody>
+          <ScrollArea className="max-h-[280px]">
+            <ul className="flex flex-col">
+              {Object.entries(CALENDARS).map(([key, c]) => {
+                const k = key as CalendarKey
+                const on = !hidden.has(k)
+                return (
+                  <li key={key}>
+                    <button
+                      onClick={() => toggleCal(k)}
+                      aria-pressed={on}
+                      className="flex w-full items-center gap-[var(--layout-space-tight)] rounded-md p-[var(--layout-space-tight)] text-left transition-colors hover:bg-neutral-hover"
+                    >
+                      <span
+                        className={`size-[12px] shrink-0 rounded-full ${on ? '' : 'border border-divider'}`}
+                        style={on ? { backgroundColor: CAL_COLOR(k) } : undefined}
+                      />
+                      <span
+                        className={`min-w-0 flex-1 truncate text-body ${on ? 'text-foreground' : 'text-fg-muted'}`}
+                        title={c.label}
+                      >
+                        {c.label}
+                      </span>
+                      {on && <Check className="size-4 shrink-0 text-primary" />}
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          </ScrollArea>
+        </PopoverBody>
+      </PopoverContent>
+    </Popover>
+  )
+
+  // 完整行事曆 modal 的 agenda(近兩週,只列有行程的日子)
+  const agendaDays = cells.filter((c) => c.offset >= 0 && visibleEvents.some((e) => e.offset === c.offset))
+
   return (
     <Module
       title="我的行事曆"
       action={
-        <Popover>
-          <PopoverTrigger asChild>
+        <Dialog>
+          <DialogTrigger asChild>
             <Button variant="text" size="sm" startIcon={CalendarDays}>
-              行事曆 ({Object.keys(CALENDARS).length})
+              完整
             </Button>
-          </PopoverTrigger>
-          <PopoverContent align="end" className="w-[260px]">
-            <PopoverHeader>
-              <PopoverTitle>行事曆</PopoverTitle>
-            </PopoverHeader>
-            <PopoverBody>
-              <ScrollArea className="max-h-[280px]">
-                <ul className="flex flex-col">
-                  {Object.entries(CALENDARS).map(([key, c]) => {
-                    const k = key as CalendarKey
-                    const on = !hidden.has(k)
-                    return (
-                      <li key={key}>
-                        <button
-                          onClick={() => toggleCal(k)}
-                          aria-pressed={on}
-                          className="flex w-full items-center gap-[var(--layout-space-tight)] rounded-md p-[var(--layout-space-tight)] text-left transition-colors hover:bg-neutral-hover"
-                        >
-                          <span
-                            className={`size-[12px] shrink-0 rounded-full ${on ? '' : 'border border-divider'}`}
-                            style={on ? { backgroundColor: CAL_COLOR(k) } : undefined}
-                          />
-                          <span
-                            className={`min-w-0 flex-1 truncate text-body ${on ? 'text-foreground' : 'text-fg-muted'}`}
-                            title={c.label}
-                          >
-                            {c.label}
-                          </span>
-                          {on && <Check className="size-4 shrink-0 text-primary" />}
-                        </button>
-                      </li>
-                    )
-                  })}
-                </ul>
-              </ScrollArea>
-            </PopoverBody>
-          </PopoverContent>
-        </Popover>
+          </DialogTrigger>
+          <DialogContent autoHeight maxWidth={520}>
+            <DialogHeader>
+              <DialogTitle>我的行事曆 · 近兩週</DialogTitle>
+            </DialogHeader>
+            <DialogBody>
+              {agendaDays.length > 0 ? (
+                <div className="flex flex-col gap-[var(--layout-space-loose)]">
+                  {agendaDays.map(({ offset }) => (
+                    <div key={offset}>
+                      <div className="mb-[var(--layout-space-tight)] text-body font-semibold text-foreground">
+                        {dayLabel(offset)} · 週{WEEKDAYS[offsetDate(offset).getDay()]}
+                      </div>
+                      <ul className="flex flex-col gap-[var(--layout-space-tight)]">
+                        {visibleEvents
+                          .filter((e) => e.offset === offset)
+                          .sort(byTime)
+                          .map((e) => (
+                            <li key={`${e.offset}-${e.time ?? 'allday'}-${e.title}`}>{renderEvent(e, false)}</li>
+                          ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="py-[var(--layout-space-loose)] text-center text-caption text-fg-muted">
+                  近兩週沒有行程
+                </div>
+              )}
+            </DialogBody>
+          </DialogContent>
+        </Dialog>
       }
     >
       {/* 星期共用最上方一排(日~六)*/}
@@ -358,18 +429,19 @@ function CalendarModule() {
 
       <Separator className="my-[var(--layout-space-tight)]" />
 
-      {/* event 區:預設近 3 筆;選日期則過濾當日 */}
-      <div className="flex items-center justify-between">
-        <span className="text-body font-medium text-foreground">
+      {/* event 區:預設近 3 筆;選日期則過濾當日。右側 = 返回 + 行事曆來源篩選 */}
+      <div className="flex items-center justify-between gap-[8px]">
+        <span className="min-w-0 truncate text-body font-medium text-foreground">
           {sel === null ? '近期行程' : `${selDate!.getMonth() + 1}月${selDate!.getDate()}日 · 週${WEEKDAYS[selDate!.getDay()]}`}
         </span>
-        {sel === null ? (
-          <span className="text-caption text-fg-muted">點日期看當日</span>
-        ) : (
-          <Button variant="text" size="sm" onClick={() => setSel(null)}>
-            返回近期
-          </Button>
-        )}
+        <div className="flex shrink-0 items-center gap-[4px]">
+          {sel !== null && (
+            <Button variant="text" size="sm" onClick={() => setSel(null)}>
+              返回近期
+            </Button>
+          )}
+          {calendarFilter}
+        </div>
       </div>
 
       {/* 今天無行程的情境提示 */}
@@ -382,27 +454,7 @@ function CalendarModule() {
           {shown.map((e, idx) => (
             <li key={`${e.offset}-${e.time ?? 'allday'}-${e.title}`}>
               {idx > 0 && <Separator className="my-[8px]" />}
-              <div className="flex items-start gap-[var(--layout-space-tight)]">
-                <span
-                  className="mt-[6px] size-2 shrink-0 rounded-full"
-                  style={{ backgroundColor: CAL_COLOR(e.calendar) }}
-                />
-                <div className="min-w-0 flex-1">
-                  <div className="text-body font-medium text-foreground truncate">{e.title}</div>
-                  <div className="flex flex-wrap items-center gap-[6px] text-caption text-fg-muted">
-                    {sel === null && <span className="tabular-nums">{dayLabel(e.offset)}</span>}
-                    {e.allDay ? (
-                      <span className="rounded-full border border-divider px-[6px] text-fg-secondary">全天</span>
-                    ) : (
-                      <span className="tabular-nums">{e.time}</span>
-                    )}
-                    <span className="opacity-50">·</span>
-                    <span className="max-w-[120px] truncate" title={CALENDARS[e.calendar].label}>
-                      {CALENDARS[e.calendar].label}
-                    </span>
-                  </div>
-                </div>
-              </div>
+              {renderEvent(e, sel === null)}
             </li>
           ))}
         </ul>
