@@ -172,21 +172,26 @@ const CALENDARS = {
   holiday: { label: '國定假日', color: 'amber' },
 } as const
 type CalendarKey = keyof typeof CALENDARS
-type CalEvent = { offset: number; time?: string; allDay?: boolean; title: string; calendar: CalendarKey }
+// period(跨多天)事件:offset = 起始日,endOffset = 結束日(inclusive)。單日事件省略 endOffset。
+type CalEvent = { offset: number; endOffset?: number; time?: string; allDay?: boolean; title: string; calendar: CalendarKey }
 const EVENTS: CalEvent[] = [
-  // 今天(offset 0)刻意留空 — 示範「今天無行程 → 顯示近期最近三筆」
+  // 橫跨今天的進行中跨天事件 — 示範 period 事件於區間內「每天可見」+「進行中」
+  { offset: -1, endOffset: 1, allDay: true, title: '設計衝刺週', calendar: 'project' },
   { offset: 1, allDay: true, title: '全員教育訓練日', calendar: 'training' },
   { offset: 1, time: '11:00', title: '與主管 1:1', calendar: 'personal' },
+  { offset: 2, endOffset: 4, time: '09:00', title: '台北出差', calendar: 'company' }, // 3 天跨天事件
   { offset: 2, time: '10:00', title: 'Sprint 規劃會議', calendar: 'project' },
   { offset: 2, time: '15:00', title: '設計部週會', calendar: 'dept' },
   { offset: 3, time: '15:30', title: '使用者訪談', calendar: 'project' },
-  { offset: 4, allDay: true, title: '國慶日', calendar: 'holiday' },
   { offset: 5, time: '14:00', title: '33q 改版設計評審', calendar: 'project' },
-  { offset: 6, time: '09:30', title: '跨部門協作會議', calendar: 'meeting' },
-  { offset: 7, allDay: true, title: '特別休假', calendar: 'leave' },
+  { offset: 6, endOffset: 8, allDay: true, title: '中秋連假', calendar: 'holiday' }, // 全天跨天事件
   { offset: 9, time: '16:00', title: '季度成果檢討', calendar: 'company' },
   { offset: 11, time: '13:00', title: '年度員工健檢', calendar: 'hr' },
 ]
+// period helper:區間(inclusive)+ 某天是否落在區間內 + 是否跨天
+const evEnd = (e: CalEvent) => e.endOffset ?? e.offset
+const covers = (e: CalEvent, offset: number) => offset >= e.offset && offset <= evEnd(e)
+const isMultiDay = (e: CalEvent) => evEnd(e) > e.offset
 const CAL_COLOR = (k: CalendarKey) => `var(--color-${CALENDARS[k].color}-6)`
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
 // 當年第幾週(ISO-style:以該週週四歸屬年份)
@@ -268,12 +273,16 @@ function CalendarModule() {
   // 排序:全天事件置頂,再依時間
   const byTime = (a: CalEvent, b: CalEvent) =>
     Number(b.allDay ?? false) - Number(a.allDay ?? false) || (a.time ?? '').localeCompare(b.time ?? '')
-  const dayHasEvents = (offset: number) => offset >= 0 && visibleEvents.some((e) => e.offset === offset)
-  const todayEmpty = !visibleEvents.some((e) => e.offset === 0)
+  const dayHasEvents = (offset: number) => offset >= 0 && visibleEvents.some((e) => covers(e, offset))
+  const todayEmpty = !visibleEvents.some((e) => covers(e, 0))
   const shown =
     sel === null
-      ? [...visibleEvents].filter((e) => e.offset >= 0).sort((a, b) => a.offset - b.offset || byTime(a, b)).slice(0, 3)
-      : visibleEvents.filter((e) => e.offset === sel).sort(byTime)
+      ? // 近期摘要:尚未結束(evEnd>=0)的事件,每筆一次,依「下一個相關日 = max(起始, 今天)」排序
+        [...visibleEvents]
+          .filter((e) => evEnd(e) >= 0)
+          .sort((a, b) => Math.max(a.offset, 0) - Math.max(b.offset, 0) || byTime(a, b))
+          .slice(0, 3)
+      : visibleEvents.filter((e) => covers(e, sel)).sort(byTime)
   const offsetDate = (offset: number) => {
     const d = new Date(today)
     d.setDate(d.getDate() + offset)
@@ -287,18 +296,32 @@ function CalendarModule() {
     return `${d.getMonth() + 1}/${d.getDate()}`
   }
 
-  // 單筆事件列(widget 清單 + modal agenda 共用)
+  // 跨天事件的區間標記(M/D–M/D)
+  const spanLabel = (e: CalEvent) => {
+    const s = offsetDate(e.offset)
+    const en = offsetDate(evEnd(e))
+    return `${s.getMonth() + 1}/${s.getDate()}–${en.getMonth() + 1}/${en.getDate()}`
+  }
+
+  // 單筆事件列(widget 清單 + modal agenda 共用)。跨天事件顯示區間 +(進行中)
   const renderEvent = (e: CalEvent, showDay: boolean) => (
     <div className="flex items-start gap-[var(--layout-space-tight)]">
       <span className="mt-[6px] size-2 shrink-0 rounded-full" style={{ backgroundColor: CAL_COLOR(e.calendar) }} />
       <div className="min-w-0 flex-1">
         <div className="text-body font-medium text-foreground truncate">{e.title}</div>
         <div className="flex flex-wrap items-center gap-[6px] text-caption text-fg-muted">
-          {showDay && <span className="tabular-nums">{dayLabel(e.offset)}</span>}
+          {isMultiDay(e) ? (
+            <span className="tabular-nums">{spanLabel(e)}</span>
+          ) : (
+            showDay && <span className="tabular-nums">{dayLabel(e.offset)}</span>
+          )}
           {e.allDay ? (
             <span className="rounded-full border border-divider px-[6px] text-fg-secondary">全天</span>
           ) : (
             <span className="tabular-nums">{e.time}</span>
+          )}
+          {isMultiDay(e) && covers(e, 0) && (
+            <span className="rounded-full bg-primary-subtle px-[6px] text-primary">進行中</span>
           )}
           <span className="opacity-50">·</span>
           <span className="max-w-[120px] truncate" title={CALENDARS[e.calendar].label}>
@@ -354,9 +377,12 @@ function CalendarModule() {
     </Popover>
   )
 
-  // 完整行事曆 modal 的 agenda(近兩週,只列有行程的日子)
-  const agendaDays = cells.filter((c) => c.offset >= 0 && visibleEvents.some((e) => e.offset === c.offset))
-  const eventsOnDate = (d: Date) => visibleEvents.filter((e) => sameDay(offsetDate(e.offset), d))
+  // 完整行事曆 modal 的 agenda(近兩週,只列有行程的日子;跨天事件每個涵蓋日都算)
+  const agendaDays = cells.filter((c) => c.offset >= 0 && visibleEvents.some((e) => covers(e, c.offset)))
+  const eventsOnDate = (d: Date) => {
+    const o = Math.round((d.getTime() - today.getTime()) / 86400000)
+    return visibleEvents.filter((e) => covers(e, o))
+  }
   // 月檢視:當月所在的 6 週 grid(從該月首日所在週的週日起算 42 格)
   const monthCells = useMemo(() => {
     const first = new Date(today.getFullYear(), today.getMonth(), 1)
@@ -380,10 +406,10 @@ function CalendarModule() {
             </div>
             <ul className="flex flex-col gap-[var(--layout-space-tight)]">
               {visibleEvents
-                .filter((e) => e.offset === offset)
+                .filter((e) => covers(e, offset))
                 .sort(byTime)
                 .map((e) => (
-                  <li key={`${e.offset}-${e.time ?? 'allday'}-${e.title}`}>{renderEvent(e, false)}</li>
+                  <li key={`${offset}-${e.calendar}-${e.title}`}>{renderEvent(e, false)}</li>
                 ))}
             </ul>
           </div>
@@ -403,11 +429,11 @@ function CalendarModule() {
           </div>
           <div className="flex flex-col gap-[4px]">
             {visibleEvents
-              .filter((e) => e.offset === offset)
+              .filter((e) => covers(e, offset))
               .sort(byTime)
               .map((e) => (
                 <div
-                  key={`${e.time ?? 'allday'}-${e.title}`}
+                  key={`${offset}-${e.calendar}-${e.title}`}
                   className="flex items-center gap-[4px] rounded-sm bg-surface px-[6px] py-[4px]"
                   title={`${e.allDay ? '全天' : e.time} · ${e.title}`}
                 >
