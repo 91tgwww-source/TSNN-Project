@@ -14,13 +14,14 @@
 //
 // SSOT 鐵律:只 consume @qijenchen/design-system public exports,不改 DS source,不自刻 DS 元件。
 
-import { Fragment, useMemo, useState, type ReactNode } from 'react'
+import { Fragment, createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
   Avatar,
   Button,
   Badge,
   Input,
   Separator,
+  Skeleton,
   ScrollArea,
   ScrollBar,
   Popover,
@@ -172,15 +173,24 @@ const CALENDARS = {
   holiday: { label: '國定假日', color: 'amber' },
 } as const
 type CalendarKey = keyof typeof CALENDARS
-// period(跨多天)事件:offset = 起始日,endOffset = 結束日(inclusive)。單日事件省略 endOffset。
-type CalEvent = { offset: number; endOffset?: number; time?: string; allDay?: boolean; title: string; calendar: CalendarKey }
+// period 事件:offset = 起始日,endOffset = 結束日(inclusive);time/endTime = 起訖 time-of-day。
+// 單日事件省略 endOffset;無 endTime = 只有起始時間(或全天)。
+type CalEvent = {
+  offset: number
+  endOffset?: number
+  time?: string
+  endTime?: string
+  allDay?: boolean
+  title: string
+  calendar: CalendarKey
+}
 const EVENTS: CalEvent[] = [
   // 橫跨今天的進行中跨天事件 — 示範 period 事件於區間內「每天可見」+「進行中」
   { offset: -1, endOffset: 1, allDay: true, title: '設計衝刺週', calendar: 'project' },
   { offset: 1, allDay: true, title: '全員教育訓練日', calendar: 'training' },
   { offset: 1, time: '11:00', title: '與主管 1:1', calendar: 'personal' },
-  { offset: 2, endOffset: 4, time: '09:00', title: '台北出差', calendar: 'company' }, // 3 天跨天事件
-  { offset: 2, time: '10:00', title: 'Sprint 規劃會議', calendar: 'project' },
+  { offset: 2, endOffset: 4, time: '09:00', endTime: '17:00', title: '台北出差', calendar: 'company' }, // 跨天帶起訖時間
+  { offset: 2, time: '10:00', endTime: '11:30', title: 'Sprint 規劃會議', calendar: 'project' }, // 同日時段
   { offset: 2, time: '15:00', title: '設計部週會', calendar: 'dept' },
   { offset: 3, time: '15:30', title: '使用者訪談', calendar: 'project' },
   { offset: 5, time: '14:00', title: '33q 改版設計評審', calendar: 'project' },
@@ -208,26 +218,68 @@ const sameDay = (a: Date, b: Date) =>
 
 /* ──────────────────────────── Building blocks ──────────────────────────── */
 
+// 進場載入態:App 進場時全站 loading,各 module 顯示 DS Skeleton(pulse + 自帶 motion-reduce)佔位
+const PortalLoadingContext = createContext(false)
+
+// Skeleton 佔位小工具(形狀/尺寸由 className / style 決定,顏色動畫由 DS Skeleton 提供)
+function SkelBar({ className = '' }: { className?: string }) {
+  return <Skeleton className={`h-[12px] ${className}`} />
+}
+// N 列「圖示 + 兩行文字」骨架(團隊 / 動態 / 文章)
+function SkelRows({ n, circle = true }: { n: number; circle?: boolean }) {
+  return (
+    <div className="flex flex-col gap-[var(--layout-space-tight)]">
+      {Array.from({ length: n }).map((_, i) => (
+        <div key={i} className="flex items-center gap-[var(--layout-space-tight)]">
+          <Skeleton className={circle ? 'rounded-full' : 'rounded-md'} style={{ width: 40, height: 40 }} />
+          <div className="flex flex-1 flex-col gap-[6px]">
+            <SkelBar className="w-2/3" />
+            <SkelBar className="w-1/3" />
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+// N 格 app icon grid 骨架(精選 / 所有應用)
+function SkelAppGrid({ n }: { n: number }) {
+  return (
+    <div className="grid grid-cols-6 gap-[var(--layout-space-tight)]">
+      {Array.from({ length: n }).map((_, i) => (
+        <div key={i} className="flex flex-col items-center gap-[8px]">
+          <Skeleton className="rounded-md" style={{ width: 48, height: 48 }} />
+          <SkelBar className="h-[10px] w-4/5" />
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function Module({
   title,
   action,
   children,
   bodyClassName,
+  skeleton,
 }: {
   title?: string
   action?: ReactNode
   children: ReactNode
   bodyClassName?: string
+  skeleton?: ReactNode
 }) {
+  const loading = useContext(PortalLoadingContext)
   return (
     <section className="rounded-lg border border-border bg-surface-raised shadow-[var(--elevation-200)]">
       {(title || action) && (
         <header className="flex items-center justify-between gap-[8px] px-[var(--layout-space-loose)] pt-[var(--layout-space-loose)] pb-[var(--layout-space-tight)]">
           {title && <h2 className="text-body-lg font-semibold text-foreground">{title}</h2>}
-          {action}
+          {!loading && action}
         </header>
       )}
-      <div className={bodyClassName ?? 'px-[var(--layout-space-loose)] pb-[var(--layout-space-loose)]'}>{children}</div>
+      <div className={bodyClassName ?? 'px-[var(--layout-space-loose)] pb-[var(--layout-space-loose)]'}>
+        {loading && skeleton ? skeleton : children}
+      </div>
     </section>
   )
 }
@@ -296,14 +348,21 @@ function CalendarModule() {
     return `${d.getMonth() + 1}/${d.getDate()}`
   }
 
-  // 跨天事件的區間標記(M/D–M/D)
-  const spanLabel = (e: CalEvent) => {
-    const s = offsetDate(e.offset)
-    const en = offsetDate(evEnd(e))
-    return `${s.getMonth() + 1}/${s.getDate()}–${en.getMonth() + 1}/${en.getDate()}`
+  // 日期 / 區間 / 起訖時間 標記
+  const md = (d: Date) => `${d.getMonth() + 1}/${d.getDate()}`
+  const spanLabel = (e: CalEvent) => `${md(offsetDate(e.offset))}–${md(offsetDate(evEnd(e)))}`
+  // 帶時間事件的時間字串:跨天→單行完整 datetime;同日→時段或單一時間
+  const timeText = (e: CalEvent) => {
+    if (isMultiDay(e)) {
+      const start = `${md(offsetDate(e.offset))} ${e.time ?? ''}`.trim()
+      const end = e.endTime ? `${md(offsetDate(evEnd(e)))} ${e.endTime}` : md(offsetDate(evEnd(e)))
+      return `${start} → ${end}`
+    }
+    return e.endTime ? `${e.time}–${e.endTime}` : (e.time ?? '')
   }
+  const allDayPill = <span className="rounded-full border border-divider px-[6px] text-fg-secondary">全天</span>
 
-  // 單筆事件列(widget 清單 + modal agenda 共用)。跨天事件顯示區間 +(進行中)
+  // 單筆事件列(widget 清單 + modal agenda 共用)。跨天顯示區間/起訖 +(進行中)
   const renderEvent = (e: CalEvent, showDay: boolean) => (
     <div className="flex items-start gap-[var(--layout-space-tight)]">
       <span className="mt-[6px] size-2 shrink-0 rounded-full" style={{ backgroundColor: CAL_COLOR(e.calendar) }} />
@@ -311,14 +370,20 @@ function CalendarModule() {
         <div className="text-body font-medium text-foreground truncate">{e.title}</div>
         <div className="flex flex-wrap items-center gap-[6px] text-caption text-fg-muted">
           {isMultiDay(e) ? (
-            <span className="tabular-nums">{spanLabel(e)}</span>
+            e.allDay ? (
+              <>
+                <span className="tabular-nums">{spanLabel(e)}</span>
+                {allDayPill}
+              </>
+            ) : (
+              // 跨天帶時間:單行完整 datetime(dates 已內含)
+              <span className="tabular-nums">{timeText(e)}</span>
+            )
           ) : (
-            showDay && <span className="tabular-nums">{dayLabel(e.offset)}</span>
-          )}
-          {e.allDay ? (
-            <span className="rounded-full border border-divider px-[6px] text-fg-secondary">全天</span>
-          ) : (
-            <span className="tabular-nums">{e.time}</span>
+            <>
+              {showDay && <span className="tabular-nums">{dayLabel(e.offset)}</span>}
+              {e.allDay ? allDayPill : <span className="tabular-nums">{timeText(e)}</span>}
+            </>
           )}
           {isMultiDay(e) && covers(e, 0) && (
             <span className="rounded-full bg-primary-subtle px-[6px] text-primary">進行中</span>
@@ -435,7 +500,7 @@ function CalendarModule() {
                 <div
                   key={`${offset}-${e.calendar}-${e.title}`}
                   className="flex items-center gap-[4px] rounded-sm bg-surface px-[6px] py-[4px]"
-                  title={`${e.allDay ? '全天' : e.time} · ${e.title}`}
+                  title={`${e.allDay ? '全天' : timeText(e)} · ${e.title}`}
                 >
                   <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: CAL_COLOR(e.calendar) }} />
                   <span className="truncate text-caption text-foreground">{e.title}</span>
@@ -485,6 +550,16 @@ function CalendarModule() {
 
   return (
     <Module
+      skeleton={
+        <div className="flex flex-col gap-[var(--layout-space-tight)]">
+          <div className="grid grid-cols-7 gap-[4px]">
+            {Array.from({ length: 14 }).map((_, i) => (
+              <Skeleton key={i} className="h-[32px] rounded-md" />
+            ))}
+          </div>
+          <SkelRows n={3} />
+        </div>
+      }
       title="我的行事曆"
       action={
         <Dialog>
@@ -601,7 +676,25 @@ function CalendarModule() {
 
 function MeModule() {
   return (
-    <Module bodyClassName="p-[var(--layout-space-loose)]">
+    <Module
+      bodyClassName="p-[var(--layout-space-loose)]"
+      skeleton={
+        <div className="flex flex-col gap-[var(--layout-space-loose)]">
+          <div className="flex items-center gap-[var(--layout-space-tight)]">
+            <Skeleton className="rounded-full" style={{ width: 56, height: 56 }} />
+            <div className="flex flex-1 flex-col gap-[6px]">
+              <SkelBar className="w-1/2" />
+              <SkelBar className="h-[10px] w-3/4" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-[var(--layout-space-tight)]">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-[52px] rounded-md" />
+            ))}
+          </div>
+        </div>
+      }
+    >
       <div className="flex items-center gap-[var(--layout-space-tight)]">
         <Avatar size={56} alt={ME.name} color="blue" status="online" />
         <div className="min-w-0">
@@ -624,7 +717,11 @@ function MeModule() {
 
 function TeamModule() {
   return (
-    <Module title="我的團隊" action={<Button variant="text" size="sm" endIcon={ChevronRight}>全部</Button>}>
+    <Module
+      title="我的團隊"
+      action={<Button variant="text" size="sm" endIcon={ChevronRight}>全部</Button>}
+      skeleton={<SkelRows n={5} />}
+    >
       <ul className="flex flex-col">
         {TEAM.map((t, i) => (
           <li key={t.name}>
@@ -649,7 +746,7 @@ function TeamModule() {
 
 function FeaturedAppsModule() {
   return (
-    <Module title="精選應用">
+    <Module title="精選應用" skeleton={<SkelAppGrid n={6} />}>
       <div className="grid grid-cols-6 gap-[var(--layout-space-tight)]">
         {FEATURED_APPS.map((app) => (
           <AppTile key={app.name} app={app} />
@@ -661,7 +758,17 @@ function FeaturedAppsModule() {
 
 function NotificationsModule() {
   return (
-    <Module title="通知中心" action={<Button variant="text" size="sm" endIcon={ChevronRight}>查看全部</Button>}>
+    <Module
+      title="通知中心"
+      action={<Button variant="text" size="sm" endIcon={ChevronRight}>查看全部</Button>}
+      skeleton={
+        <div className="flex gap-[var(--layout-space-tight)] overflow-hidden">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="shrink-0 rounded-md" style={{ width: 204, height: 143 }} />
+          ))}
+        </div>
+      }
+    >
       <ScrollArea className="w-full">
         <div className="flex gap-[var(--layout-space-tight)] pb-[var(--layout-space-tight)]">
           {NOTIFICATIONS.map((n) => (
@@ -684,7 +791,11 @@ function NotificationsModule() {
 
 function AppsModule() {
   return (
-    <Module title="所有應用" action={<Button variant="text" size="sm" endIcon={ChevronRight}>應用市集</Button>}>
+    <Module
+      title="所有應用"
+      action={<Button variant="text" size="sm" endIcon={ChevronRight}>應用市集</Button>}
+      skeleton={<SkelAppGrid n={12} />}
+    >
       <div className="grid grid-cols-6 gap-[var(--layout-space-tight)]">
         {ALL_APPS.map((app) => (
           <AppTile key={app.name} app={app} />
@@ -696,7 +807,20 @@ function AppsModule() {
 
 function QaModule() {
   return (
-    <Module title="常見問題">
+    <Module
+      title="常見問題"
+      skeleton={
+        <div className="grid grid-cols-2 gap-[var(--layout-space-tight)]">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="flex flex-col gap-[6px] rounded-md border border-divider p-[var(--layout-space-tight)]">
+              <SkelBar className="w-3/4" />
+              <SkelBar className="h-[10px] w-full" />
+              <SkelBar className="h-[10px] w-2/3" />
+            </div>
+          ))}
+        </div>
+      }
+    >
       <div className="grid grid-cols-2 gap-[var(--layout-space-tight)]">
         {QA.map((item) => (
           <div key={item.q} className="rounded-md border border-divider bg-surface p-[var(--layout-space-tight)]">
@@ -713,7 +837,7 @@ function QaModule() {
 
 function ActivityModule() {
   return (
-    <Module title="動態追蹤">
+    <Module title="動態追蹤" skeleton={<SkelRows n={4} circle={false} />}>
       <ul className="flex flex-col gap-[4px]">
         {ACTIVITIES.map((a) => (
           <li key={a.label}>
@@ -747,7 +871,7 @@ function ActivityModule() {
 function ArticlesModule() {
   const pages = [ARTICLES.slice(0, 4), ARTICLES.slice(4, 8), ARTICLES.slice(8, 12)]
   return (
-    <Module title="精選文章">
+    <Module title="精選文章" skeleton={<SkelRows n={4} circle={false} />}>
       <Carousel opts={{ loop: false }}>
         <CarouselContent>
           {pages.map((page, pi) => (
@@ -785,6 +909,12 @@ function QuoteModule() {
   return (
     <Module
       title="每日一句"
+      skeleton={
+        <div className="flex flex-col gap-[8px]">
+          <SkelBar className="w-full" />
+          <SkelBar className="w-2/3" />
+        </div>
+      }
       action={
         <Button
           variant="text"
@@ -868,8 +998,15 @@ function PortalFooter() {
 /* ──────────────────────────── Page ──────────────────────────── */
 
 export default function App() {
+  // 進場模擬載入:所有 module 先顯示 skeleton,約 0.9s 後換真實內容
+  const [loading, setLoading] = useState(true)
+  useEffect(() => {
+    const t = setTimeout(() => setLoading(false), 900)
+    return () => clearTimeout(t)
+  }, [])
   return (
     <TooltipProvider delayDuration={500} skipDelayDuration={300}>
+      <PortalLoadingContext.Provider value={loading}>
       <div className="relative min-h-screen min-w-[1200px] bg-canvas">
         <PortalHeader />
 
@@ -914,6 +1051,7 @@ export default function App() {
 
         <PortalFooter />
       </div>
+      </PortalLoadingContext.Provider>
     </TooltipProvider>
   )
 }
