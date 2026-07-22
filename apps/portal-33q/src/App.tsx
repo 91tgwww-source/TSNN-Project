@@ -70,6 +70,7 @@ import {
   ChevronRight,
   type LucideIcon,
 } from 'lucide-react'
+import { ManagerAdminApp } from './ManagerAdmin'
 
 /* ──────────────────────────── Mock data ──────────────────────────── */
 
@@ -94,6 +95,7 @@ const TEAM = [
 
 type AppEntry = { name: string; icon: LucideIcon; color: 'blue' | 'green' | 'orange' | 'purple' | 'red' | 'turquoise' }
 const FEATURED_APPS: AppEntry[] = [
+  { name: '主管管理', icon: ShieldCheck, color: 'blue' },
   { name: '差勤系統', icon: Calendar, color: 'blue' },
   { name: '請款報帳', icon: Wallet, color: 'green' },
   { name: '差旅申請', icon: Plane, color: 'orange' },
@@ -284,9 +286,12 @@ function Module({
   )
 }
 
-function AppTile({ app }: { app: AppEntry }) {
+function AppTile({ app, onOpen }: { app: AppEntry; onOpen?: () => void }) {
   return (
-    <button className="group flex flex-col items-center gap-[8px] rounded-md p-[var(--layout-space-tight)] text-center transition-colors hover:bg-neutral-hover">
+    <button
+      type="button"
+      onClick={onOpen}
+      className="group flex flex-col items-center gap-[8px] rounded-md p-[var(--layout-space-tight)] text-center transition-colors hover:bg-neutral-hover">
       <Avatar shape="square" icon={app.icon} color={app.color} size={48} solid />
       <span className="text-caption text-fg-secondary line-clamp-1 w-full">{app.name}</span>
     </button>
@@ -744,12 +749,12 @@ function TeamModule() {
 
 /* ──────────────────────────── Middle column ──────────────────────────── */
 
-function FeaturedAppsModule() {
+function FeaturedAppsModule({ onOpenManager }: { onOpenManager: () => void }) {
   return (
     <Module title="精選應用" skeleton={<SkelAppGrid n={6} />}>
       <div className="grid grid-cols-6 gap-[var(--layout-space-tight)]">
         {FEATURED_APPS.map((app) => (
-          <AppTile key={app.name} app={app} />
+          <AppTile key={app.name} app={app} onOpen={app.name === '主管管理' ? onOpenManager : undefined} />
         ))}
       </div>
     </Module>
@@ -789,7 +794,7 @@ function NotificationsModule() {
   )
 }
 
-function AppsModule() {
+function AppsModule({ onOpenManager }: { onOpenManager: () => void }) {
   return (
     <Module
       title="所有應用"
@@ -798,7 +803,7 @@ function AppsModule() {
     >
       <div className="grid grid-cols-6 gap-[var(--layout-space-tight)]">
         {ALL_APPS.map((app) => (
-          <AppTile key={app.name} app={app} />
+          <AppTile key={app.name} app={app} onOpen={app.name === '主管管理' ? onOpenManager : undefined} />
         ))}
       </div>
     </Module>
@@ -1000,10 +1005,21 @@ function PortalFooter() {
 export default function App() {
   // 進場模擬載入:所有 module 先顯示 skeleton,約 0.9s 後換真實內容
   const [loading, setLoading] = useState(true)
+  // 入口首頁 vs 主管管理系統(點精選/所有應用的「主管管理」圖示進入,自帶全螢幕 AppShell)
+  const [view, setView] = useState<'home' | 'manager'>('home')
   useEffect(() => {
     const t = setTimeout(() => setLoading(false), 900)
     return () => clearTimeout(t)
   }, [])
+
+  if (view === 'manager') {
+    return (
+      <TooltipProvider delayDuration={500} skipDelayDuration={300}>
+        <ManagerAdminApp onBack={() => setView('home')} />
+      </TooltipProvider>
+    )
+  }
+
   return (
     <TooltipProvider delayDuration={500} skipDelayDuration={300}>
       <PortalLoadingContext.Provider value={loading}>
@@ -1034,9 +1050,9 @@ export default function App() {
 
             {/* 中欄 */}
             <div className="flex flex-col gap-[20px]">
-              <FeaturedAppsModule />
+              <FeaturedAppsModule onOpenManager={() => setView('manager')} />
               <NotificationsModule />
-              <AppsModule />
+              <AppsModule onOpenManager={() => setView('manager')} />
               <QaModule />
             </div>
 
