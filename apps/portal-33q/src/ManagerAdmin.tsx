@@ -513,7 +513,7 @@ type Pill = { id: string; label: string; people: Person[] }
 export function ManagerAdminApp({ onBack }: { onBack: () => void }) {
   const [anchor, setAnchor] = useState<OrgId>('prod') // 錨定組織,預設王經理的產品處
   const [orgOpen, setOrgOpen] = useState(false)
-  const [mode, setMode] = useState<'compare' | 'roster'>('compare') // 檢視:組織比較 / 人員清單
+  const [mode, setMode] = useState<'compare' | 'roster'>('roster') // 預設:進場直接看轄下人員清單;組織比較為 opt-in 切換
   const [pillId, setPillId] = useState<string>('level1') // 預設第一層人員
   const [cond, setCond] = useState<Cond>('all')
   const [tab, setTab] = useState<ContentTab>('key')
@@ -540,7 +540,7 @@ export function ManagerAdminApp({ onBack }: { onBack: () => void }) {
   const rows = useMemo(() => activePill.people.filter((p) => matchesCond(p, cond)), [activePill, cond])
 
   // 切組織:有子組織 → 預設比較;無 → 人員清單
-  const pickOrg = (id: OrgId) => { setAnchor(id); setPillId('level1'); setCond('all'); setMode(childrenOf(id).length ? 'compare' : 'roster'); setOrgOpen(false) }
+  const pickOrg = (id: OrgId) => { setAnchor(id); setPillId('level1'); setCond('all'); setMode('roster'); setOrgOpen(false) }
   // 從比較表下鑽某子組織 → 錨定它並看人員清單
   const drill = (id: OrgId) => { setAnchor(id); setPillId('level1'); setCond('all'); setMode('roster') }
 
