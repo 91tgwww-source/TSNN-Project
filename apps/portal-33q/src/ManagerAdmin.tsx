@@ -480,29 +480,20 @@ function OrgTreeItem({ org, depth, anchored, onPick }: { org: Org; depth: number
 
 /* ──────────────────────────── 人員搜尋(全組織)──────────────────────────── */
 
-function PersonSearch({ onPick }: { onPick: (p: Person) => void }) {
-  const [q, setQ] = useState('')
-  const matches = useMemo(() => (q.trim() ? PEOPLE.filter((p) => p.name.includes(q.trim())).slice(0, 6) : []), [q])
+// 送出式搜尋:輸入關鍵字 → 按 Enter 才 query(不做即時 autocomplete 候選)
+function PersonSearch({ value, onSubmit }: { value: string; onSubmit: (q: string) => void }) {
+  const [draft, setDraft] = useState(value)
   return (
-    <div className="relative w-[240px]">
-      <Input startIcon={Search} size="sm" placeholder="搜尋員工姓名…" aria-label="搜尋員工" value={q} onChange={(e) => setQ(e.target.value)} className="rounded-full" />
-      {matches.length > 0 && (
-        <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-20 overflow-hidden rounded-md border border-border bg-surface-raised shadow-[var(--elevation-200)]">
-          {matches.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              onClick={() => { onPick(p); setQ('') }}
-              className="flex w-full items-center gap-[var(--layout-space-tight)] px-[var(--layout-space-tight)] py-[6px] text-left transition-colors hover:bg-neutral-hover"
-            >
-              <Avatar size={24} alt={p.name} color={p.color} />
-              <span className="text-body text-foreground">{p.name}</span>
-              <span className="ml-auto text-caption text-fg-muted">{orgName(p.orgId)}</span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
+    <Input
+      startIcon={Search}
+      size="sm"
+      placeholder="搜尋姓名/職稱/Email…按 Enter"
+      aria-label="搜尋員工"
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onKeyDown={(e) => { if (e.key === 'Enter') onSubmit(draft.trim()) }}
+      className="w-[240px] rounded-full"
+    />
   )
 }
 
@@ -518,6 +509,7 @@ export function ManagerAdminApp({ onBack }: { onBack: () => void }) {
   const [cond, setCond] = useState<Cond>('all')
   const [tab, setTab] = useState<ContentTab>('key')
   const [selected, setSelected] = useState<Person | null>(null)
+  const [query, setQuery] = useState('') // 已送出的搜尋關鍵字(空 = 非搜尋)
 
   const scoped = useMemo(() => PEOPLE.filter((p) => subtreeIds(anchor).includes(p.orgId)), [anchor])
   const subOrgs = childrenOf(anchor)
@@ -538,6 +530,14 @@ export function ManagerAdminApp({ onBack }: { onBack: () => void }) {
 
   const activePill = pills.find((p) => p.id === pillId) ?? pills[0]
   const rows = useMemo(() => activePill.people.filter((p) => matchesCond(p, cond)), [activePill, cond])
+
+  // 搜尋:Enter 送出後跨全組織比對(姓名/職稱/Email/分機/組織名)
+  const searching = query.trim() !== ''
+  const matches = useMemo(() => {
+    const q = query.trim()
+    if (!q) return []
+    return PEOPLE.filter((p) => [p.name, p.role, p.email, p.ext, orgName(p.orgId)].some((f) => f.includes(q)))
+  }, [query])
 
   // 切組織:有子組織 → 預設比較;無 → 人員清單
   const pickOrg = (id: OrgId) => { setAnchor(id); setPillId('level1'); setCond('all'); setMode('roster'); setOrgOpen(false) }
@@ -565,7 +565,7 @@ export function ManagerAdminApp({ onBack }: { onBack: () => void }) {
                 <OrgTreeItem org={ORGS.find((o) => o.parentId === null)!} depth={0} anchored={anchor} onPick={pickOrg} />
               </PopoverContent>
             </Popover>
-            <PersonSearch onPick={(p) => setSelected(p)} />
+            <PersonSearch value={query} onSubmit={(q) => setQuery(q)} />
           </div>
         </div>
       </section>
@@ -573,22 +573,40 @@ export function ManagerAdminApp({ onBack }: { onBack: () => void }) {
       {/* ── Content module(檢視切換 + 人員清單 / 組織比較)── */}
       <section className={moduleCard}>
         <div className="flex flex-wrap items-center justify-between gap-[var(--layout-space-tight)] border-b border-divider px-[var(--layout-space-loose)] py-[var(--layout-space-tight)]">
-          <div className="flex items-baseline gap-[8px]">
-            <span className="text-body-lg font-semibold text-foreground">
-              {mode === 'compare' ? `${orgName(anchor)} · 子組織比較` : `${orgName(anchor)} · ${activePill.label}`}
-            </span>
-            <span className="text-caption text-fg-secondary tabular-nums">
-              {mode === 'compare' ? `${subOrgs.length} 個子組織` : `${rows.length} 人`}
-            </span>
-          </div>
-          <SegmentedControl size="sm" value={mode} onValueChange={(v) => setMode(v as 'compare' | 'roster')}>
-            <SegmentedControlItem value="roster">人員清單</SegmentedControlItem>
-            <SegmentedControlItem value="compare">組織比較</SegmentedControlItem>
-          </SegmentedControl>
+          {searching ? (
+            <>
+              <div className="flex items-baseline gap-[8px]">
+                <span className="text-body-lg font-semibold text-foreground">搜尋「{query}」</span>
+                <span className="text-caption text-fg-secondary tabular-nums">{matches.length} 筆</span>
+              </div>
+              <Button variant="text" size="sm" onClick={() => setQuery('')}>清除搜尋</Button>
+            </>
+          ) : (
+            <>
+              <div className="flex items-baseline gap-[8px]">
+                <span className="text-body-lg font-semibold text-foreground">
+                  {mode === 'compare' ? `${orgName(anchor)} · 子組織比較` : `${orgName(anchor)} · ${activePill.label}`}
+                </span>
+                <span className="text-caption text-fg-secondary tabular-nums">
+                  {mode === 'compare' ? `${subOrgs.length} 個子組織` : `${rows.length} 人`}
+                </span>
+              </div>
+              <SegmentedControl size="sm" value={mode} onValueChange={(v) => setMode(v as 'compare' | 'roster')}>
+                <SegmentedControlItem value="roster">人員清單</SegmentedControlItem>
+                <SegmentedControlItem value="compare">組織比較</SegmentedControlItem>
+              </SegmentedControl>
+            </>
+          )}
         </div>
 
         <div className="px-[var(--layout-space-loose)] pb-[var(--layout-space-loose)] pt-[var(--layout-space-tight)]">
-          {mode === 'compare' ? (
+          {searching ? (
+            matches.length > 0 ? (
+              <RosterTable columns={COLUMNS.key} rows={matches} onOpen={(p) => setSelected(p)} />
+            ) : (
+              <div className="py-[var(--layout-space-loose)] text-center text-body text-fg-muted">找不到符合「{query}」的人員。</div>
+            )
+          ) : mode === 'compare' ? (
             subOrgs.length > 0 ? (
               <ComparisonTable anchor={anchor} onDrill={drill} />
             ) : (
