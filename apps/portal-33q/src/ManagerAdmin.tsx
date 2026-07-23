@@ -224,7 +224,15 @@ function ComparisonTable({ anchor, onDrill }: { anchor: OrgId; onDrill: (id: Org
         </thead>
         <tbody>
           {sorted.map((s) => (
-            <tr key={s.org.id} onClick={() => onDrill(s.org.id)} className="cursor-pointer border-b border-divider hover:bg-neutral-hover">
+            <tr
+              key={s.org.id}
+              onClick={() => onDrill(s.org.id)}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onDrill(s.org.id) } }}
+              tabIndex={0}
+              role="button"
+              aria-label={`檢視 ${s.org.name} 的人員`}
+              className="cursor-pointer border-b border-divider hover:bg-neutral-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
+            >
               <td className={`${td} font-medium text-foreground`}>{s.org.name}</td>
               <td className={td}>
                 <div className="flex items-center justify-end gap-[8px]">
@@ -337,7 +345,11 @@ function RosterTable({ columns, rows, onOpen }: { columns: Column[]; rows: Perso
             <tr
               key={p.id}
               onClick={() => onOpen(p)}
-              className="cursor-pointer border-b border-divider last:border-0 hover:bg-neutral-hover"
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(p) } }}
+              tabIndex={0}
+              role="button"
+              aria-label={`檢視 ${p.name} 的檔案`}
+              className="cursor-pointer border-b border-divider last:border-0 hover:bg-neutral-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
             >
               {columns.map((c, i) => (
                 <td
@@ -585,7 +597,7 @@ export function ManagerAdminApp({ onBack }: { onBack: () => void }) {
             <>
               <div className="flex items-baseline gap-[8px]">
                 <span className="text-body-lg font-semibold text-foreground">
-                  {mode === 'compare' ? `${orgName(anchor)} · 子組織比較` : `${orgName(anchor)} · ${activePill.label}`}
+                  {mode === 'compare' ? '子組織比較' : activePill.label}
                 </span>
                 <span className="text-caption text-fg-secondary tabular-nums">
                   {mode === 'compare' ? `${subOrgs.length} 個子組織` : `${rows.length} 人`}
@@ -635,23 +647,20 @@ export function ManagerAdminApp({ onBack }: { onBack: () => void }) {
                 })}
               </div>
 
-              {/* 內容過濾器(篩列)*/}
-              <div className="flex flex-wrap items-center gap-[var(--layout-space-tight)]">
-                <span className="text-caption text-fg-secondary">篩選</span>
-                <SegmentedControl size="sm" value={cond} onValueChange={(v) => setCond(v as Cond)}>
-                  {CONDS.map((c) => (
-                    <SegmentedControlItem key={c.id} value={c.id}>{c.label}</SegmentedControlItem>
-                  ))}
-                </SegmentedControl>
-              </div>
-
-              {/* 內容分類 tab(換欄位)+ 表格 */}
+              {/* 內容分類 tab(換欄位,靠左)+ 內容過濾器(篩列,靠右)同一列 + 表格 */}
               <Tabs value={tab} onValueChange={(v) => setTab(v as ContentTab)}>
-                <TabsList>
-                  {CONTENT_TABS.map((t) => (
-                    <TabsTrigger key={t.id} value={t.id}>{t.label}</TabsTrigger>
-                  ))}
-                </TabsList>
+                <div className="flex flex-wrap items-center justify-between gap-[var(--layout-space-tight)]">
+                  <TabsList>
+                    {CONTENT_TABS.map((t) => (
+                      <TabsTrigger key={t.id} value={t.id}>{t.label}</TabsTrigger>
+                    ))}
+                  </TabsList>
+                  <SegmentedControl size="sm" value={cond} onValueChange={(v) => setCond(v as Cond)}>
+                    {CONDS.map((c) => (
+                      <SegmentedControlItem key={c.id} value={c.id}>{c.label}</SegmentedControlItem>
+                    ))}
+                  </SegmentedControl>
+                </div>
                 {CONTENT_TABS.map((t) => (
                   <TabsContent key={t.id} value={t.id} className="pt-[var(--layout-space-tight)]">
                     <RosterTable columns={COLUMNS[t.id]} rows={rows} onOpen={(p) => setSelected(p)} />

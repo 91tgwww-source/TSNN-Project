@@ -1016,7 +1016,7 @@ export default function App() {
     // 主管管理屬 33q native 系統:維持 33q 共用 header(PortalHeader),頁面本身再有自己的 header module
     return (
       <TooltipProvider delayDuration={500} skipDelayDuration={300}>
-        <div className="relative min-h-screen min-w-[1000px] bg-canvas">
+        <div className="relative min-h-screen min-w-[1000px] bg-canvas pt-16">
           <PortalHeader />
           <ManagerAdminApp onBack={() => setView('home')} />
         </div>
