@@ -1013,10 +1013,11 @@ export default function App() {
   }, [])
 
   if (view === 'manager') {
-    // 主管管理是 33q native 內頁:33q 灰底,內頁自帶 header module(含返回首頁),不套 PortalHeader nav bar
+    // 主管管理屬 33q native 系統:維持 33q 共用 header(PortalHeader),頁面本身再有自己的 header module
     return (
       <TooltipProvider delayDuration={500} skipDelayDuration={300}>
         <div className="relative min-h-screen min-w-[1000px] bg-canvas">
+          <PortalHeader />
           <ManagerAdminApp onBack={() => setView('home')} />
         </div>
       </TooltipProvider>
