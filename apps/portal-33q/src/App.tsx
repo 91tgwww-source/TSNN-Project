@@ -1013,9 +1013,13 @@ export default function App() {
   }, [])
 
   if (view === 'manager') {
+    // 主管管理是 33q 原生開啟的 app → 沿用 33q 的 PortalHeader,管理頁本身不自帶 header
     return (
       <TooltipProvider delayDuration={500} skipDelayDuration={300}>
-        <ManagerAdminApp onBack={() => setView('home')} />
+        <div className="relative min-h-screen min-w-[1000px] bg-canvas">
+          <PortalHeader />
+          <ManagerAdminApp onBack={() => setView('home')} />
+        </div>
       </TooltipProvider>
     )
   }

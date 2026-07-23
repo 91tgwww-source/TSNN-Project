@@ -164,29 +164,97 @@ function GenderBar({ people }: { people: Person[] }) {
   )
 }
 
-function SubOrgCompareCard({ org, onDrill }: { org: Org; onDrill: () => void }) {
-  const people = useMemo(() => PEOPLE.filter((p) => subtreeIds(org.id).includes(p.orgId)), [org.id])
+// 一列一個子組織的可排序比較表(scale 到十幾~二十個子組織仍好讀)
+type OrgStat = { org: Org; count: number; m: number; f: number; bands: Record<'資深' | '中階' | '初階', number>; avgTenure: number; newQ: number; att: number }
+function computeOrgStat(org: Org): OrgStat {
+  const ppl = PEOPLE.filter((p) => subtreeIds(org.id).includes(p.orgId))
   const bands = { 資深: 0, 中階: 0, 初階: 0 }
-  people.forEach((p) => (bands[levelBand(p.level)] += 1))
+  ppl.forEach((p) => (bands[levelBand(p.level)] += 1))
+  const m = ppl.filter((p) => p.gender === 'M').length
+  return {
+    org,
+    count: ppl.length,
+    m,
+    f: ppl.length - m,
+    bands,
+    avgTenure: ppl.length ? ppl.reduce((s, p) => s + p.tenureYears, 0) / ppl.length : 0,
+    newQ: ppl.filter((p) => p.joinedDaysAgo <= 90).length,
+    att: ppl.filter((p) => p.attendance !== '正常').length,
+  }
+}
+
+type SortKey = 'count' | 'avgTenure' | 'newQ' | 'att'
+
+function ComparisonTable({ anchor, onDrill }: { anchor: OrgId; onDrill: (id: OrgId) => void }) {
+  const [sortKey, setSortKey] = useState<SortKey>('count')
+  const [asc, setAsc] = useState(false)
+  const stats = useMemo(() => childrenOf(anchor).map(computeOrgStat), [anchor])
+  const sorted = useMemo(() => {
+    const s = [...stats].sort((a, b) => (a[sortKey] as number) - (b[sortKey] as number))
+    return asc ? s : s.reverse()
+  }, [stats, sortKey, asc])
+  const maxCount = Math.max(1, ...stats.map((s) => s.count))
+  const total = stats.reduce(
+    (t, s) => ({ count: t.count + s.count, m: t.m + s.m, f: t.f + s.f, newQ: t.newQ + s.newQ, att: t.att + s.att, tenureSum: t.tenureSum + s.avgTenure * s.count }),
+    { count: 0, m: 0, f: 0, newQ: 0, att: 0, tenureSum: 0 },
+  )
+  const toggle = (k: SortKey) => { if (k === sortKey) setAsc((v) => !v); else { setSortKey(k); setAsc(false) } }
+  const arrow = (k: SortKey) => (k === sortKey ? (asc ? ' ▲' : ' ▼') : '')
+  const SortTh = ({ k, label }: { k: SortKey; label: string }) => (
+    <th className="cursor-pointer select-none whitespace-nowrap py-[var(--layout-space-tight)] pr-[var(--layout-space-loose)] text-right hover:text-foreground" onClick={() => toggle(k)}>
+      {label}{arrow(k)}
+    </th>
+  )
+  const td = 'py-[var(--layout-space-tight)] pr-[var(--layout-space-loose)]'
+
   return (
-    <button
-      type="button"
-      onClick={onDrill}
-      className="flex flex-col gap-[var(--layout-space-tight)] rounded-lg border border-divider bg-surface p-[var(--layout-space-loose)] text-left transition-colors hover:border-primary hover:bg-neutral-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-    >
-      <div className="flex items-center justify-between">
-        <span className="text-body-lg font-semibold text-foreground">{org.name}</span>
-        <span className="text-h3 tabular-nums text-foreground">{people.length}<span className="text-caption text-fg-secondary"> 人</span></span>
-      </div>
-      <GenderBar people={people} />
-      <div className="flex gap-[8px] text-caption text-fg-secondary tabular-nums">
-        <span>資深 {bands['資深']}</span>
-        <span className="opacity-40">·</span>
-        <span>中階 {bands['中階']}</span>
-        <span className="opacity-40">·</span>
-        <span>初階 {bands['初階']}</span>
-      </div>
-    </button>
+    <div className="overflow-x-auto">
+      <table className="w-full border-collapse text-body">
+        <thead>
+          <tr className="border-b border-divider text-left text-caption font-medium text-fg-secondary">
+            <th className={td}>子組織</th>
+            <SortTh k="count" label="人數" />
+            <th className={td}>性別</th>
+            <th className={`${td} whitespace-nowrap`}>職等分布</th>
+            <SortTh k="avgTenure" label="平均年資" />
+            <SortTh k="newQ" label="本季新進" />
+            <SortTh k="att" label="出勤異常" />
+            <th className="py-[var(--layout-space-tight)]" aria-label="操作" />
+          </tr>
+        </thead>
+        <tbody>
+          {sorted.map((s) => (
+            <tr key={s.org.id} onClick={() => onDrill(s.org.id)} className="cursor-pointer border-b border-divider hover:bg-neutral-hover">
+              <td className={`${td} font-medium text-foreground`}>{s.org.name}</td>
+              <td className={td}>
+                <div className="flex items-center justify-end gap-[8px]">
+                  <div className="h-[6px] w-[56px] overflow-hidden rounded-full bg-neutral-3">
+                    <div className="h-full rounded-full" style={{ width: `${(s.count / maxCount) * 100}%`, backgroundColor: 'var(--color-blue-9)' }} />
+                  </div>
+                  <span className="tabular-nums text-foreground">{s.count}</span>
+                </div>
+              </td>
+              <td className={`${td} w-[116px]`}><GenderBar people={PEOPLE.filter((p) => subtreeIds(s.org.id).includes(p.orgId))} /></td>
+              <td className={`${td} whitespace-nowrap text-caption text-fg-secondary tabular-nums`}>資深 {s.bands['資深']} · 中階 {s.bands['中階']} · 初階 {s.bands['初階']}</td>
+              <td className={`${td} text-right tabular-nums text-fg-secondary`}>{s.avgTenure.toFixed(1)} 年</td>
+              <td className={`${td} text-right tabular-nums text-fg-secondary`}>{s.newQ}</td>
+              <td className={`${td} text-right tabular-nums`}>{s.att > 0 ? <span className="font-medium text-warning">{s.att}</span> : <span className="text-fg-muted">0</span>}</td>
+              <td className="whitespace-nowrap py-[var(--layout-space-tight)] text-right"><span className="text-caption text-primary">檢視 ›</span></td>
+            </tr>
+          ))}
+          <tr className="text-caption font-medium text-fg-secondary">
+            <td className={td}>合計</td>
+            <td className={`${td} text-right tabular-nums`}>{total.count}</td>
+            <td className={`${td} tabular-nums`}>男 {total.m} · 女 {total.f}</td>
+            <td />
+            <td className={`${td} text-right tabular-nums`}>{total.count ? (total.tenureSum / total.count).toFixed(1) : '0.0'} 年</td>
+            <td className={`${td} text-right tabular-nums`}>{total.newQ}</td>
+            <td className={`${td} text-right tabular-nums`}>{total.att}</td>
+            <td />
+          </tr>
+        </tbody>
+      </table>
+    </div>
   )
 }
 
@@ -445,6 +513,7 @@ type Pill = { id: string; label: string; people: Person[] }
 export function ManagerAdminApp({ onBack }: { onBack: () => void }) {
   const [anchor, setAnchor] = useState<OrgId>('prod') // 錨定組織,預設王經理的產品處
   const [orgOpen, setOrgOpen] = useState(false)
+  const [mode, setMode] = useState<'compare' | 'roster'>('compare') // 檢視:組織比較 / 人員清單
   const [pillId, setPillId] = useState<string>('level1') // 預設第一層人員
   const [cond, setCond] = useState<Cond>('all')
   const [tab, setTab] = useState<ContentTab>('key')
@@ -470,93 +539,106 @@ export function ManagerAdminApp({ onBack }: { onBack: () => void }) {
   const activePill = pills.find((p) => p.id === pillId) ?? pills[0]
   const rows = useMemo(() => activePill.people.filter((p) => matchesCond(p, cond)), [activePill, cond])
 
+  // 切組織:有子組織 → 預設比較;無 → 人員清單
+  const pickOrg = (id: OrgId) => { setAnchor(id); setPillId('level1'); setCond('all'); setMode(childrenOf(id).length ? 'compare' : 'roster'); setOrgOpen(false) }
+  // 從比較表下鑽某子組織 → 錨定它並看人員清單
+  const drill = (id: OrgId) => { setAnchor(id); setPillId('level1'); setCond('all'); setMode('roster') }
+
   return (
-    <div className="min-h-screen min-w-[1000px] bg-canvas">
-      {/* 頁首(與 33q 一致的 chrome)*/}
-      <header className="sticky top-0 z-30 flex h-16 items-center gap-[var(--layout-space-loose)] border-b border-border bg-surface px-[40px]">
+    // header 由外層 33q PortalHeader 提供;此處只有管理頁內容
+    <main className="mx-auto flex max-w-[1600px] flex-col gap-[20px] px-[40px] py-[var(--layout-space-loose)]">
+      {/* 管理頁工具列 */}
+      <div className="flex flex-wrap items-center gap-[var(--layout-space-tight)]">
         <Button variant="text" size="sm" startIcon={ArrowLeft} onClick={onBack}>返回員工入口</Button>
-        <span className="text-body-lg font-semibold text-foreground">主管管理系統</span>
-        {/* 組織選擇 */}
+        <span className="text-fg-muted">/</span>
+        <span className="text-body-lg font-semibold text-foreground">主管管理</span>
         <Popover open={orgOpen} onOpenChange={setOrgOpen}>
           <PopoverTrigger asChild>
             <Button variant="secondary" size="sm" startIcon={Building2} endIcon={ChevronDown}>組織：{orgName(anchor)}</Button>
           </PopoverTrigger>
           <PopoverContent className="w-[240px] p-[var(--layout-space-tight)]">
             <div className="mb-[4px] px-[8px] text-caption text-fg-muted">選擇要檢視的組織</div>
-            <OrgTreeItem org={ORGS.find((o) => o.parentId === null)!} depth={0} anchored={anchor} onPick={(id) => { setAnchor(id); setPillId('level1'); setOrgOpen(false) }} />
+            <OrgTreeItem org={ORGS.find((o) => o.parentId === null)!} depth={0} anchored={anchor} onPick={pickOrg} />
           </PopoverContent>
         </Popover>
+        <SegmentedControl size="sm" value={mode} onValueChange={(v) => setMode(v as 'compare' | 'roster')}>
+          <SegmentedControlItem value="compare">組織比較</SegmentedControlItem>
+          <SegmentedControlItem value="roster">人員清單</SegmentedControlItem>
+        </SegmentedControl>
         <div className="ml-auto">
           <PersonSearch onPick={(p) => setSelected(p)} />
         </div>
-      </header>
+      </div>
 
-      <main className="mx-auto flex max-w-[1600px] flex-col gap-[20px] px-[40px] py-[var(--layout-space-loose)]">
-        {/* 子組織比較(Journey A 概覽 + Journey C 比較)*/}
-        {subOrgs.length > 0 && (
-          <section>
-            <h2 className="mb-[var(--layout-space-tight)] text-body-lg font-semibold text-foreground">
-              {orgName(anchor)} · 子組織比較
-            </h2>
-            <div className="grid gap-[20px]" style={{ gridTemplateColumns: `repeat(${Math.min(subOrgs.length, 4)}, minmax(0, 1fr))` }}>
-              {subOrgs.map((o) => (
-                <SubOrgCompareCard key={o.id} org={o} onDrill={() => { setPillId(`org:${o.id}`); setCond('all') }} />
-              ))}
+      {mode === 'compare' ? (
+        subOrgs.length > 0 ? (
+          <section className="rounded-lg border border-border bg-surface-raised shadow-[var(--elevation-200)]">
+            <div className="border-b border-divider px-[var(--layout-space-loose)] py-[var(--layout-space-tight)] text-body-lg font-semibold text-foreground">
+              {orgName(anchor)} · 子組織比較（{subOrgs.length}）
+            </div>
+            <div className="px-[var(--layout-space-loose)] pb-[var(--layout-space-loose)] pt-[var(--layout-space-tight)]">
+              <ComparisonTable anchor={anchor} onDrill={drill} />
             </div>
           </section>
-        )}
-
-        {/* 膠囊 tab(含人數)*/}
-        <div className="flex flex-wrap items-center gap-[8px]">
-          {pills.map((p) => {
-            const on = p.id === pillId
-            return (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() => { setPillId(p.id); setCond('all') }}
-                aria-pressed={on}
-                className={`rounded-full border px-[var(--layout-space-loose)] py-[6px] text-body transition-colors ${on ? 'border-primary bg-primary-subtle font-medium text-primary' : 'border-divider bg-surface text-fg-secondary hover:border-primary hover:text-foreground'}`}
-              >
-                {p.label}
-                <span className={`ml-[6px] tabular-nums ${on ? 'text-primary' : 'text-fg-muted'}`}>{p.people.length}</span>
-              </button>
-            )
-          })}
-        </div>
-
-        {/* 人員清單卡:當前顯示 + 內容過濾器 + 內容分類 tab + 表格 */}
-        <section className="rounded-lg border border-border bg-surface-raised shadow-[var(--elevation-200)]">
-          <div className="flex flex-wrap items-center justify-between gap-[var(--layout-space-tight)] border-b border-divider px-[var(--layout-space-loose)] py-[var(--layout-space-tight)]">
-            <div className="flex items-baseline gap-[8px]">
-              <span className="text-body-lg font-semibold text-foreground">{orgName(anchor)} · {activePill.label} · {condLabel(cond)}</span>
-              <span className="text-caption text-fg-secondary tabular-nums">{rows.length} 人</span>
-            </div>
-            <SegmentedControl size="sm" value={cond} onValueChange={(v) => setCond(v as Cond)}>
-              {CONDS.map((c) => (
-                <SegmentedControlItem key={c.id} value={c.id}>{c.label}</SegmentedControlItem>
-              ))}
-            </SegmentedControl>
+        ) : (
+          <div className="rounded-lg border border-divider bg-surface p-[var(--layout-space-loose)] text-center text-body text-fg-muted">
+            「{orgName(anchor)}」底下沒有子組織可比較,請切換到「人員清單」檢視成員。
+          </div>
+        )
+      ) : (
+        <>
+          {/* 膠囊 tab(含人數)*/}
+          <div className="flex flex-wrap items-center gap-[8px]">
+            {pills.map((p) => {
+              const on = p.id === pillId
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => { setPillId(p.id); setCond('all') }}
+                  aria-pressed={on}
+                  className={`rounded-full border px-[var(--layout-space-loose)] py-[6px] text-body transition-colors ${on ? 'border-primary bg-primary-subtle font-medium text-primary' : 'border-divider bg-surface text-fg-secondary hover:border-primary hover:text-foreground'}`}
+                >
+                  {p.label}
+                  <span className={`ml-[6px] tabular-nums ${on ? 'text-primary' : 'text-fg-muted'}`}>{p.people.length}</span>
+                </button>
+              )
+            })}
           </div>
 
-          <Tabs value={tab} onValueChange={(v) => setTab(v as ContentTab)}>
-            <div className="px-[var(--layout-space-loose)] pt-[var(--layout-space-tight)]">
-              <TabsList>
-                {CONTENT_TABS.map((t) => (
-                  <TabsTrigger key={t.id} value={t.id}>{t.label}</TabsTrigger>
+          {/* 人員清單卡:當前顯示 + 內容過濾器 + 內容分類 tab + 表格 */}
+          <section className="rounded-lg border border-border bg-surface-raised shadow-[var(--elevation-200)]">
+            <div className="flex flex-wrap items-center justify-between gap-[var(--layout-space-tight)] border-b border-divider px-[var(--layout-space-loose)] py-[var(--layout-space-tight)]">
+              <div className="flex items-baseline gap-[8px]">
+                <span className="text-body-lg font-semibold text-foreground">{orgName(anchor)} · {activePill.label} · {condLabel(cond)}</span>
+                <span className="text-caption text-fg-secondary tabular-nums">{rows.length} 人</span>
+              </div>
+              <SegmentedControl size="sm" value={cond} onValueChange={(v) => setCond(v as Cond)}>
+                {CONDS.map((c) => (
+                  <SegmentedControlItem key={c.id} value={c.id}>{c.label}</SegmentedControlItem>
                 ))}
-              </TabsList>
+              </SegmentedControl>
             </div>
-            {CONTENT_TABS.map((t) => (
-              <TabsContent key={t.id} value={t.id} className="px-[var(--layout-space-loose)] pb-[var(--layout-space-loose)] pt-[var(--layout-space-tight)]">
-                <RosterTable columns={COLUMNS[t.id]} rows={rows} onOpen={(p) => setSelected(p)} />
-              </TabsContent>
-            ))}
-          </Tabs>
-        </section>
-      </main>
+
+            <Tabs value={tab} onValueChange={(v) => setTab(v as ContentTab)}>
+              <div className="px-[var(--layout-space-loose)] pt-[var(--layout-space-tight)]">
+                <TabsList>
+                  {CONTENT_TABS.map((t) => (
+                    <TabsTrigger key={t.id} value={t.id}>{t.label}</TabsTrigger>
+                  ))}
+                </TabsList>
+              </div>
+              {CONTENT_TABS.map((t) => (
+                <TabsContent key={t.id} value={t.id} className="px-[var(--layout-space-loose)] pb-[var(--layout-space-loose)] pt-[var(--layout-space-tight)]">
+                  <RosterTable columns={COLUMNS[t.id]} rows={rows} onOpen={(p) => setSelected(p)} />
+                </TabsContent>
+              ))}
+            </Tabs>
+          </section>
+        </>
+      )}
 
       <PersonDialog person={selected} onClose={() => setSelected(null)} />
-    </div>
+    </main>
   )
 }
