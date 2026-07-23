@@ -544,99 +544,106 @@ export function ManagerAdminApp({ onBack }: { onBack: () => void }) {
   // 從比較表下鑽某子組織 → 錨定它並看人員清單
   const drill = (id: OrgId) => { setAnchor(id); setPillId('level1'); setCond('all'); setMode('roster') }
 
+  const moduleCard = 'rounded-lg border border-border bg-surface-raised shadow-[var(--elevation-200)]'
+
   return (
-    // header 由外層 33q PortalHeader 提供;此處只有管理頁內容
+    // 33q native 內頁:灰底(App wrapper 提供)+ header module + content module,module 樣式同 33q 首頁
     <main className="mx-auto flex max-w-[1600px] flex-col gap-[20px] px-[40px] py-[var(--layout-space-loose)]">
-      {/* 管理頁工具列 */}
-      <div className="flex flex-wrap items-center gap-[var(--layout-space-tight)]">
-        <Button variant="text" size="sm" startIcon={ArrowLeft} onClick={onBack}>返回員工入口</Button>
-        <span className="text-fg-muted">/</span>
-        <span className="text-body-lg font-semibold text-foreground">主管管理</span>
-        <Popover open={orgOpen} onOpenChange={setOrgOpen}>
-          <PopoverTrigger asChild>
-            <Button variant="secondary" size="sm" startIcon={Building2} endIcon={ChevronDown}>組織：{orgName(anchor)}</Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-[240px] p-[var(--layout-space-tight)]">
-            <div className="mb-[4px] px-[8px] text-caption text-fg-muted">選擇要檢視的組織</div>
-            <OrgTreeItem org={ORGS.find((o) => o.parentId === null)!} depth={0} anchored={anchor} onPick={pickOrg} />
-          </PopoverContent>
-        </Popover>
-        <SegmentedControl size="sm" value={mode} onValueChange={(v) => setMode(v as 'compare' | 'roster')}>
-          <SegmentedControlItem value="compare">組織比較</SegmentedControlItem>
-          <SegmentedControlItem value="roster">人員清單</SegmentedControlItem>
-        </SegmentedControl>
-        <div className="ml-auto">
-          <PersonSearch onPick={(p) => setSelected(p)} />
+      {/* ── Header module(內頁自己的 header:返回首頁 + 標題 + 組織篩選器 + 搜尋)── */}
+      <section className={moduleCard}>
+        <div className="flex flex-wrap items-center gap-[var(--layout-space-tight)] px-[var(--layout-space-loose)] py-[var(--layout-space-tight)]">
+          <Button variant="text" size="sm" startIcon={ArrowLeft} onClick={onBack}>返回首頁</Button>
+          <span className="text-body-lg font-semibold text-foreground">主管管理</span>
+          <div className="ml-auto flex flex-wrap items-center gap-[var(--layout-space-tight)]">
+            {/* 組織篩選器:default 停在自己管轄的組織;click 出 TreeView 錨定子組織 */}
+            <Popover open={orgOpen} onOpenChange={setOrgOpen}>
+              <PopoverTrigger asChild>
+                <Button variant="secondary" size="sm" startIcon={Building2} endIcon={ChevronDown}>組織：{orgName(anchor)}</Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[240px] p-[var(--layout-space-tight)]">
+                <div className="mb-[4px] px-[8px] text-caption text-fg-muted">選擇要檢視的組織</div>
+                <OrgTreeItem org={ORGS.find((o) => o.parentId === null)!} depth={0} anchored={anchor} onPick={pickOrg} />
+              </PopoverContent>
+            </Popover>
+            <PersonSearch onPick={(p) => setSelected(p)} />
+          </div>
         </div>
-      </div>
+      </section>
 
-      {mode === 'compare' ? (
-        subOrgs.length > 0 ? (
-          <section className="rounded-lg border border-border bg-surface-raised shadow-[var(--elevation-200)]">
-            <div className="border-b border-divider px-[var(--layout-space-loose)] py-[var(--layout-space-tight)] text-body-lg font-semibold text-foreground">
-              {orgName(anchor)} · 子組織比較（{subOrgs.length}）
-            </div>
-            <div className="px-[var(--layout-space-loose)] pb-[var(--layout-space-loose)] pt-[var(--layout-space-tight)]">
+      {/* ── Content module(檢視切換 + 人員清單 / 組織比較)── */}
+      <section className={moduleCard}>
+        <div className="flex flex-wrap items-center justify-between gap-[var(--layout-space-tight)] border-b border-divider px-[var(--layout-space-loose)] py-[var(--layout-space-tight)]">
+          <div className="flex items-baseline gap-[8px]">
+            <span className="text-body-lg font-semibold text-foreground">
+              {mode === 'compare' ? `${orgName(anchor)} · 子組織比較` : `${orgName(anchor)} · ${activePill.label}`}
+            </span>
+            <span className="text-caption text-fg-secondary tabular-nums">
+              {mode === 'compare' ? `${subOrgs.length} 個子組織` : `${rows.length} 人`}
+            </span>
+          </div>
+          <SegmentedControl size="sm" value={mode} onValueChange={(v) => setMode(v as 'compare' | 'roster')}>
+            <SegmentedControlItem value="roster">人員清單</SegmentedControlItem>
+            <SegmentedControlItem value="compare">組織比較</SegmentedControlItem>
+          </SegmentedControl>
+        </div>
+
+        <div className="px-[var(--layout-space-loose)] pb-[var(--layout-space-loose)] pt-[var(--layout-space-tight)]">
+          {mode === 'compare' ? (
+            subOrgs.length > 0 ? (
               <ComparisonTable anchor={anchor} onDrill={drill} />
-            </div>
-          </section>
-        ) : (
-          <div className="rounded-lg border border-divider bg-surface p-[var(--layout-space-loose)] text-center text-body text-fg-muted">
-            「{orgName(anchor)}」底下沒有子組織可比較,請切換到「人員清單」檢視成員。
-          </div>
-        )
-      ) : (
-        <>
-          {/* 膠囊 tab(含人數)*/}
-          <div className="flex flex-wrap items-center gap-[8px]">
-            {pills.map((p) => {
-              const on = p.id === pillId
-              return (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => { setPillId(p.id); setCond('all') }}
-                  aria-pressed={on}
-                  className={`rounded-full border px-[var(--layout-space-loose)] py-[6px] text-body transition-colors ${on ? 'border-primary bg-primary-subtle font-medium text-primary' : 'border-divider bg-surface text-fg-secondary hover:border-primary hover:text-foreground'}`}
-                >
-                  {p.label}
-                  <span className={`ml-[6px] tabular-nums ${on ? 'text-primary' : 'text-fg-muted'}`}>{p.people.length}</span>
-                </button>
-              )
-            })}
-          </div>
-
-          {/* 人員清單卡:當前顯示 + 內容過濾器 + 內容分類 tab + 表格 */}
-          <section className="rounded-lg border border-border bg-surface-raised shadow-[var(--elevation-200)]">
-            <div className="flex flex-wrap items-center justify-between gap-[var(--layout-space-tight)] border-b border-divider px-[var(--layout-space-loose)] py-[var(--layout-space-tight)]">
-              <div className="flex items-baseline gap-[8px]">
-                <span className="text-body-lg font-semibold text-foreground">{orgName(anchor)} · {activePill.label} · {condLabel(cond)}</span>
-                <span className="text-caption text-fg-secondary tabular-nums">{rows.length} 人</span>
+            ) : (
+              <div className="py-[var(--layout-space-loose)] text-center text-body text-fg-muted">
+                「{orgName(anchor)}」底下沒有子組織可比較,請切換到「人員清單」檢視成員。
               </div>
-              <SegmentedControl size="sm" value={cond} onValueChange={(v) => setCond(v as Cond)}>
-                {CONDS.map((c) => (
-                  <SegmentedControlItem key={c.id} value={c.id}>{c.label}</SegmentedControlItem>
-                ))}
-              </SegmentedControl>
-            </div>
+            )
+          ) : (
+            <div className="flex flex-col gap-[var(--layout-space-loose)]">
+              {/* 膠囊 tab(含人數)*/}
+              <div className="flex flex-wrap items-center gap-[8px]">
+                {pills.map((p) => {
+                  const on = p.id === pillId
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => { setPillId(p.id); setCond('all') }}
+                      aria-pressed={on}
+                      className={`rounded-full border px-[var(--layout-space-loose)] py-[6px] text-body transition-colors ${on ? 'border-primary bg-primary-subtle font-medium text-primary' : 'border-divider bg-surface text-fg-secondary hover:border-primary hover:text-foreground'}`}
+                    >
+                      {p.label}
+                      <span className={`ml-[6px] tabular-nums ${on ? 'text-primary' : 'text-fg-muted'}`}>{p.people.length}</span>
+                    </button>
+                  )
+                })}
+              </div>
 
-            <Tabs value={tab} onValueChange={(v) => setTab(v as ContentTab)}>
-              <div className="px-[var(--layout-space-loose)] pt-[var(--layout-space-tight)]">
+              {/* 內容過濾器(篩列)*/}
+              <div className="flex flex-wrap items-center gap-[var(--layout-space-tight)]">
+                <span className="text-caption text-fg-secondary">篩選</span>
+                <SegmentedControl size="sm" value={cond} onValueChange={(v) => setCond(v as Cond)}>
+                  {CONDS.map((c) => (
+                    <SegmentedControlItem key={c.id} value={c.id}>{c.label}</SegmentedControlItem>
+                  ))}
+                </SegmentedControl>
+              </div>
+
+              {/* 內容分類 tab(換欄位)+ 表格 */}
+              <Tabs value={tab} onValueChange={(v) => setTab(v as ContentTab)}>
                 <TabsList>
                   {CONTENT_TABS.map((t) => (
                     <TabsTrigger key={t.id} value={t.id}>{t.label}</TabsTrigger>
                   ))}
                 </TabsList>
-              </div>
-              {CONTENT_TABS.map((t) => (
-                <TabsContent key={t.id} value={t.id} className="px-[var(--layout-space-loose)] pb-[var(--layout-space-loose)] pt-[var(--layout-space-tight)]">
-                  <RosterTable columns={COLUMNS[t.id]} rows={rows} onOpen={(p) => setSelected(p)} />
-                </TabsContent>
-              ))}
-            </Tabs>
-          </section>
-        </>
-      )}
+                {CONTENT_TABS.map((t) => (
+                  <TabsContent key={t.id} value={t.id} className="pt-[var(--layout-space-tight)]">
+                    <RosterTable columns={COLUMNS[t.id]} rows={rows} onOpen={(p) => setSelected(p)} />
+                  </TabsContent>
+                ))}
+              </Tabs>
+            </div>
+          )}
+        </div>
+      </section>
 
       <PersonDialog person={selected} onClose={() => setSelected(null)} />
     </main>
