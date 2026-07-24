@@ -50,6 +50,8 @@ const ORGS: Org[] = [
 const orgName = (id: OrgId) => ORGS.find((o) => o.id === id)?.name ?? id
 const childrenOf = (id: OrgId) => ORGS.filter((o) => o.parentId === id)
 const subtreeIds = (id: OrgId): OrgId[] => [id, ...childrenOf(id).flatMap((c) => subtreeIds(c.id))]
+// 登入主管 governance 的頂層(= 組織樹 root)。職級越高 → root 越上層 → 轄下可搜到的人越多。
+const MANAGER_ROOT: OrgId = ORGS.find((o) => o.parentId === null)!.id
 
 /* ──────────────────────────── 人員 mock ──────────────────────────── */
 
@@ -499,7 +501,7 @@ function PersonSearch({ value, onSubmit }: { value: string; onSubmit: (q: string
     <Input
       startIcon={Search}
       size="sm"
-      placeholder="搜尋全公司員工…按 Enter"
+      placeholder="搜尋轄下員工…按 Enter"
       aria-label="搜尋員工"
       value={draft}
       onChange={(e) => setDraft(e.target.value)}
@@ -543,12 +545,16 @@ export function ManagerAdminApp({ onBack }: { onBack: () => void }) {
   const activePill = pills.find((p) => p.id === pillId) ?? pills[0]
   const rows = useMemo(() => activePill.people.filter((p) => matchesCond(p, cond)), [activePill, cond])
 
-  // 搜尋:Enter 送出後跨全組織比對(姓名/職稱/Email/分機/組織名)
+  // 搜尋:Enter 送出後,在「該主管轄下所有員工」(MANAGER_ROOT 子樹,與目前 anchor 無關)內比對
+  // 比對欄位:姓名/職稱/Email/分機/組織名
   const searching = query.trim() !== ''
   const matches = useMemo(() => {
     const q = query.trim()
     if (!q) return []
-    return PEOPLE.filter((p) => [p.name, p.role, p.email, p.ext, orgName(p.orgId)].some((f) => f.includes(q)))
+    const managed = subtreeIds(MANAGER_ROOT)
+    return PEOPLE.filter(
+      (p) => managed.includes(p.orgId) && [p.name, p.role, p.email, p.ext, orgName(p.orgId)].some((f) => f.includes(q)),
+    )
   }, [query])
 
   // 切組織:有子組織 → 預設比較;無 → 人員清單
@@ -649,14 +655,19 @@ export function ManagerAdminApp({ onBack }: { onBack: () => void }) {
                       <TabsTrigger key={t.id} value={t.id}>{t.label}</TabsTrigger>
                     ))}
                   </TabsList>
-                  <div className="flex flex-wrap items-center gap-[var(--layout-space-tight)]">
-                    <span className="text-caption text-fg-secondary tabular-nums">{rows.length} 人</span>
-                    <SegmentedControl size="sm" value={cond} onValueChange={(v) => setCond(v as Cond)}>
-                      {CONDS.map((c) => (
-                        <SegmentedControlItem key={c.id} value={c.id}>{c.label}</SegmentedControlItem>
-                      ))}
-                    </SegmentedControl>
-                  </div>
+                  <SegmentedControl size="sm" value={cond} onValueChange={(v) => setCond(v as Cond)}>
+                    {CONDS.map((c) => (
+                      <SegmentedControlItem key={c.id} value={c.id}>{c.label}</SegmentedControlItem>
+                    ))}
+                  </SegmentedControl>
+                </div>
+                {/* 目前顯示 caption:位於所有控制項之下、表格之上(結果摘要,非凌駕控制項的標題)*/}
+                <div className="flex flex-wrap items-baseline gap-[6px] pt-[var(--layout-space-tight)]">
+                  <span className="text-caption text-fg-muted">目前顯示</span>
+                  <span className="text-body font-medium text-foreground">
+                    {orgName(anchor)} · {activePill.label}{cond !== 'all' ? ` · ${condLabel(cond)}` : ''}
+                  </span>
+                  <span className="text-caption text-fg-secondary tabular-nums">· {rows.length} 人</span>
                 </div>
                 {CONTENT_TABS.map((t) => (
                   <TabsContent key={t.id} value={t.id} className="pt-[var(--layout-space-tight)]">
