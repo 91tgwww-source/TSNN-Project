@@ -12,7 +12,7 @@
 // (同入口行事曆「更多」modal 模式)。SSOT:只 import DS public exports,不改 DS source,不自刻 DS 元件。
 // 私人電話 / 戶籍地為敏感個資 — 原型用假資料展示,真實系統應做權限控管與存取紀錄。
 
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
   Avatar,
   Button,
@@ -497,6 +497,7 @@ function OrgTreeItem({ org, depth, anchored, onPick }: { org: Org; depth: number
 // 送出式搜尋:輸入關鍵字 → 按 Enter 才 query(不做即時 autocomplete 候選)
 function PersonSearch({ value, onSubmit }: { value: string; onSubmit: (q: string) => void }) {
   const [draft, setDraft] = useState(value)
+  useEffect(() => setDraft(value), [value]) // 外部清除搜尋(value→'')時同步清空輸入框
   return (
     <Input
       startIcon={Search}
@@ -531,6 +532,7 @@ export function ManagerAdminApp({ onBack }: { onBack: () => void }) {
   // 膠囊:第一層人員 / 第二層人員 / 各直屬子組織
   const pills: Pill[] = useMemo(() => {
     const base: Pill[] = [
+      { id: 'all', label: '全部', people: scoped }, // 整個錨定子樹攤平 → 一次比所有下屬(考核/戶籍等)
       { id: 'level1', label: '第一層人員', people: scoped.filter((p) => p.reportLevel === 1) },
       { id: 'level2', label: '第二層人員', people: scoped.filter((p) => p.reportLevel === 2) },
     ]
@@ -544,6 +546,8 @@ export function ManagerAdminApp({ onBack }: { onBack: () => void }) {
 
   const activePill = pills.find((p) => p.id === pillId) ?? pills[0]
   const rows = useMemo(() => activePill.people.filter((p) => matchesCond(p, cond)), [activePill, cond])
+  // 轄下(目前錨定子樹)出勤異常人數 → 進場即可surface,不被特定膠囊藏住
+  const attentionCount = useMemo(() => scoped.filter((p) => p.attendance !== '正常').length, [scoped])
 
   // 搜尋:Enter 送出後,在「該主管轄下所有員工」(MANAGER_ROOT 子樹,與目前 anchor 無關)內比對
   // 比對欄位:姓名/職稱/Email/分機/組織名
@@ -628,6 +632,19 @@ export function ManagerAdminApp({ onBack }: { onBack: () => void }) {
             )
           ) : (
             <div className="flex flex-col gap-[var(--layout-space-loose)]">
+              {/* 需關注 chip:轄下有出勤異常就 surface,點擊直接跳到 全部×出勤異常 */}
+              {attentionCount > 0 && !(pillId === 'all' && cond === 'attention') && (
+                <button
+                  type="button"
+                  onClick={() => { setPillId('all'); setCond('attention') }}
+                  className="flex items-center gap-[6px] self-start rounded-md border border-divider bg-surface px-[var(--layout-space-tight)] py-[6px] text-body transition-colors hover:bg-neutral-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                >
+                  <TriangleAlert size={15} className="text-warning" />
+                  <span className="text-foreground">轄下 <span className="font-medium tabular-nums">{attentionCount}</span> 人需關注(出勤異常)</span>
+                  <span className="text-caption text-primary">查看 ›</span>
+                </button>
+              )}
+
               {/* 膠囊 tab(含人數)*/}
               <div className="flex flex-wrap items-center gap-[8px]">
                 {pills.map((p) => {
