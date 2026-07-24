@@ -499,7 +499,7 @@ function PersonSearch({ value, onSubmit }: { value: string; onSubmit: (q: string
     <Input
       startIcon={Search}
       size="sm"
-      placeholder="搜尋姓名/職稱/Email…按 Enter"
+      placeholder="搜尋全公司員工…按 Enter"
       aria-label="搜尋員工"
       value={draft}
       onChange={(e) => setDraft(e.target.value)}
@@ -566,19 +566,19 @@ export function ManagerAdminApp({ onBack }: { onBack: () => void }) {
         <div className="flex flex-wrap items-center gap-[var(--layout-space-tight)] px-[var(--layout-space-loose)] py-[var(--layout-space-tight)]">
           <Button variant="text" size="sm" startIcon={ArrowLeft} onClick={onBack}>返回首頁</Button>
           <span className="text-body-lg font-semibold text-foreground">主管管理</span>
-          <div className="ml-auto flex flex-wrap items-center gap-[var(--layout-space-tight)]">
-            {/* 組織篩選器:default 停在自己管轄的組織;click 出 TreeView 錨定子組織 */}
-            <Popover open={orgOpen} onOpenChange={setOrgOpen}>
-              <PopoverTrigger asChild>
-                <Button variant="secondary" size="sm" startIcon={Building2} endIcon={ChevronDown}>組織：{orgName(anchor)}</Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-[240px] p-[var(--layout-space-tight)]">
-                <div className="mb-[4px] px-[8px] text-caption text-fg-muted">選擇要檢視的組織</div>
-                <OrgTreeItem org={ORGS.find((o) => o.parentId === null)!} depth={0} anchored={anchor} onPick={pickOrg} />
-              </PopoverContent>
-            </Popover>
-            <PersonSearch value={query} onSubmit={(q) => setQuery(q)} />
-          </div>
+          <span className="text-fg-muted">·</span>
+          {/* 組織導覽:與標題同一組(「你正在看哪個組織」),不是搜尋範圍 */}
+          <Popover open={orgOpen} onOpenChange={setOrgOpen}>
+            <PopoverTrigger asChild>
+              <Button variant="secondary" size="sm" startIcon={Building2} endIcon={ChevronDown}>組織：{orgName(anchor)}</Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[240px] p-[var(--layout-space-tight)]">
+              <div className="mb-[4px] px-[8px] text-caption text-fg-muted">選擇要檢視的組織</div>
+              <OrgTreeItem org={ORGS.find((o) => o.parentId === null)!} depth={0} anchored={anchor} onPick={pickOrg} />
+            </PopoverContent>
+          </Popover>
+          {/* 全公司人員搜尋:獨立靠最右,與組織導覽分開,避免誤讀成「選組後在組內搜尋」 */}
+          <div className="ml-auto"><PersonSearch value={query} onSubmit={(q) => setQuery(q)} /></div>
         </div>
       </section>
 
@@ -594,20 +594,11 @@ export function ManagerAdminApp({ onBack }: { onBack: () => void }) {
               <Button variant="text" size="sm" onClick={() => setQuery('')}>清除搜尋</Button>
             </>
           ) : (
-            <>
-              <div className="flex items-baseline gap-[8px]">
-                <span className="text-body-lg font-semibold text-foreground">
-                  {mode === 'compare' ? '子組織比較' : activePill.label}
-                </span>
-                <span className="text-caption text-fg-secondary tabular-nums">
-                  {mode === 'compare' ? `${subOrgs.length} 個子組織` : `${rows.length} 人`}
-                </span>
-              </div>
-              <SegmentedControl size="sm" value={mode} onValueChange={(v) => setMode(v as 'compare' | 'roster')}>
-                <SegmentedControlItem value="roster">人員清單</SegmentedControlItem>
-                <SegmentedControlItem value="compare">組織比較</SegmentedControlItem>
-              </SegmentedControl>
-            </>
+            // 模式切換是最上層控制;不放會 echo 下方膠囊的標題
+            <SegmentedControl size="sm" value={mode} onValueChange={(v) => setMode(v as 'compare' | 'roster')}>
+              <SegmentedControlItem value="roster">人員清單</SegmentedControlItem>
+              <SegmentedControlItem value="compare">組織比較</SegmentedControlItem>
+            </SegmentedControl>
           )}
         </div>
 
@@ -620,7 +611,10 @@ export function ManagerAdminApp({ onBack }: { onBack: () => void }) {
             )
           ) : mode === 'compare' ? (
             subOrgs.length > 0 ? (
-              <ComparisonTable anchor={anchor} onDrill={drill} />
+              <div className="flex flex-col gap-[var(--layout-space-tight)]">
+                <span className="text-caption text-fg-secondary">共 {subOrgs.length} 個子組織 · 點列可下鑽至該組織人員</span>
+                <ComparisonTable anchor={anchor} onDrill={drill} />
+              </div>
             ) : (
               <div className="py-[var(--layout-space-loose)] text-center text-body text-fg-muted">
                 「{orgName(anchor)}」底下沒有子組織可比較,請切換到「人員清單」檢視成員。
@@ -655,11 +649,14 @@ export function ManagerAdminApp({ onBack }: { onBack: () => void }) {
                       <TabsTrigger key={t.id} value={t.id}>{t.label}</TabsTrigger>
                     ))}
                   </TabsList>
-                  <SegmentedControl size="sm" value={cond} onValueChange={(v) => setCond(v as Cond)}>
-                    {CONDS.map((c) => (
-                      <SegmentedControlItem key={c.id} value={c.id}>{c.label}</SegmentedControlItem>
-                    ))}
-                  </SegmentedControl>
+                  <div className="flex flex-wrap items-center gap-[var(--layout-space-tight)]">
+                    <span className="text-caption text-fg-secondary tabular-nums">{rows.length} 人</span>
+                    <SegmentedControl size="sm" value={cond} onValueChange={(v) => setCond(v as Cond)}>
+                      {CONDS.map((c) => (
+                        <SegmentedControlItem key={c.id} value={c.id}>{c.label}</SegmentedControlItem>
+                      ))}
+                    </SegmentedControl>
+                  </div>
                 </div>
                 {CONTENT_TABS.map((t) => (
                   <TabsContent key={t.id} value={t.id} className="pt-[var(--layout-space-tight)]">
